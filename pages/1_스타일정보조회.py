@@ -1,69 +1,73 @@
 import streamlit as st
 import pandas as pd
 
-PRODUCT_CSV = "product_master.csv"
+INFO_CSV = "product_info.csv"
+IMAGE_CSV = "product_images.csv"
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv(PRODUCT_CSV)
-    df.columns = df.columns.str.strip()
-    return df
+    df_info = pd.read_csv(INFO_CSV)
+    df_img = pd.read_csv(IMAGE_CSV)
+    return df_info, df_img
 
-df = load_data()
+df_info, df_img = load_data()
 
 st.title("Product Info Dashboard")
 
-style_input = st.text_input("🔍 스타일 번호를 입력하세요 (예: BT33)", "")
+style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
 
 if style_input:
-    matches = df[df["Product Number"].astype(str).str.contains(style_input, case=False, na=False)]
+    matched = df_info[df_info["Product Number"].astype(str).str.contains(style_input, case=False, na=False)]
 
-    if not matches.empty:
+    if not matched.empty:
         selected = st.selectbox(
             "스타일 선택",
-            matches["Product Number"].astype(str) + " - " + matches.get("default product name(en)", "")
+            matched["Product Number"].astype(str)
         )
+        product_info = df_info[df_info["Product Number"] == selected].iloc[0]
+        product_img = df_img[df_img["Product Number"] == selected].iloc[0] if not df_img[df_img["Product Number"] == selected].empty else {}
 
-        selected_style = selected.split(" - ")[0]
-        product_rows = df[df["Product Number"] == selected_style]
+        # 🔲 상단: 이미지 + 인포
+        col1, col2 = st.columns([1, 2])
 
-        # 대표 row 하나 선택 (일단 첫 번째)
-        product = product_rows.iloc[0]
-
-        # --- 이미지 ---
-        if pd.notna(product.get("First Image", "")):
-            st.image(product["First Image"], width=320)
-        else:
-            st.markdown("*이미지가 없습니다*")
-
-        # --- 제품 정보 요약 ---
-        st.markdown("### 🧾 Product Info")
-        col1, col2 = st.columns(2)
         with col1:
-            st.markdown(f"**Product Number:** {product.get('Product Number', '')}")
-            st.markdown(f"**Product Name:** {product.get('default product name(en)', '')}")
-            st.markdown(f"**ERP PRICE:** ${product.get('ERP PRICE', 0):.2f}")
-            st.markdown(f"**SHEIN PRICE:** ${product.get('Special Offer Price(shein-us_USD)', 0):.2f}")
+            if product_img and pd.notna(product_img.get("First Image", "")):
+                st.image(product_img["First Image"], width=300)
+            else:
+                st.markdown("_이미지가 없습니다._")
+
         with col2:
-            st.markdown(f"**SLEEVE:** {product.get('SLEEVE', '')}")
-            st.markdown(f"**NECKLINE:** {product.get('NECKLINE', '')}")
-            st.markdown(f"**LENGTH:** {product.get('LENGTH', '')}")
-            st.markdown(f"**FIT:** {product.get('FIT', '')}")
-            st.markdown(f"**DETAIL:** {product.get('DETAIL', '')}")
-            st.markdown(f"**STYLE MOOD:** {product.get('STYLE MOOD', '')}")
-            st.markdown(f"**MODEL:** {product.get('MODEL', '')}")
-            st.markdown(f"**NOTES:** {product.get('NOTES', '')}")
+            st.markdown(f"**Product Number:** {product_info['Product Number']}")
+            st.markdown(f"**Product Name:** {product_img.get('default product name(en)', '')}")
+            st.markdown(f"**ERP PRICE:** ${product_info.get('ERP PRICE', 0):.2f}")
+            st.markdown(f"**SHEIN PRICE:** ${product_img.get('SHEIN PRICE', 0):.2f}")
+            st.markdown(f"**SLEEVE:** {product_info.get('SLEEVE', '')}")
+            st.markdown(f"**NECKLINE:** {product_info.get('NECKLINE', '')}")
+            st.markdown(f"**LENGTH:** {product_info.get('LENGTH', '')}")
+            st.markdown(f"**FIT:** {product_info.get('FIT', '')}")
+            st.markdown(f"**DETAIL:** {product_info.get('DETAIL', '')}")
+            st.markdown(f"**STYLE MOOD:** {product_info.get('STYLE MOOD', '')}")
+            st.markdown(f"**MODEL:** {product_info.get('MODEL', '')}")
+            st.markdown(f"**NOTES:** {product_info.get('NOTES', '')}")
 
-        # --- 사이즈 차트 ---
+        # 📏 하단: 사이즈 차트
+        st.markdown("---")
         st.markdown("### 📏 Size Chart")
-        size_cols = [col for col in df.columns if any(x in col for x in ["TOP1_", "TOP2_", "BOTTOM_"])]
-        size_data = product[size_cols].dropna()
 
-        if not size_data.empty:
-            size_df = pd.DataFrame(size_data).T.reset_index()
-            size_df.columns = ["Measurement", "cm"]
-            st.dataframe(size_df, use_container_width=True)
-        else:
-            st.markdown("_사이즈 정보 없음_")
+        size_fields = {
+            "Top 1": ["TOP1_CHEST", "TOP1_LENGTH", "TOP1_SLEEVE"],
+            "Top 2": ["TOP2_CHEST", "TOP2_LENGTH", "TOP2_SLEEVE"],
+            "Bottom": ["BOTTOM_WAIST", "BOTTOM_HIP", "BOTTOM_LENGTH", "BOTTOM_INSEAM"]
+        }
+
+        for section, fields in size_fields.items():
+            size_data = []
+            for field in fields:
+                if field in product_info and pd.notna(product_info[field]):
+                    label = field.split("_")[1].capitalize()
+                    size_data.append((label, product_info[field]))
+            if size_data:
+                st.markdown(f"**{section}**")
+                st.table(pd.DataFrame(size_data, columns=["Measurement", "cm"]))
     else:
-        st.warning("해당 스타일을 찾을 수 없습니다.")
+        st.warning("❌ 해당 스타일을 찾을 수 없습니다.")

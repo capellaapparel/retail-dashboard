@@ -2,15 +2,14 @@ import streamlit as st
 import pandas as pd
 import os
 
-# 실제 파일 경로 지정
-INFO_CSV = "product_info_with_sizes.csv"
+INFO_CSV = "product_info_with_full_prices.csv"
 IMAGE_CSV = "product_images.csv"
 
 st.set_page_config(page_title="Capella Product Dashboard", layout="wide")
 st.sidebar.title("📂 Capella Dashboard")
 page = st.sidebar.radio("페이지 선택", ["🏠 홈", "🔍 스타일 정보 조회", "➕ 새로운 스타일 등록"])
 
-# --- 홈 페이지 ---
+# --- 홈 ---
 if page == "🏠 홈":
     st.title("👋 Welcome to Capella Dashboard")
     st.markdown("""
@@ -21,31 +20,27 @@ if page == "🏠 홈":
 📈 추후 세일즈 예측/추천 기능 확장 예정
 """)
 
-# --- 스타일 정보 조회 페이지 ---
+# --- 스타일 조회 ---
 elif page == "🔍 스타일 정보 조회":
     st.title("🔍 스타일 정보 조회")
 
-    if os.path.exists(INFO_CSV):
-        df_info = pd.read_csv(INFO_CSV)
-    else:
-        st.warning("❌ product_info_with_sizes.csv 파일이 없습니다.")
+    if not os.path.exists(INFO_CSV):
+        st.error("❌ 제품 정보 파일이 없습니다.")
         st.stop()
 
-    if os.path.exists(IMAGE_CSV):
-        df_img = pd.read_csv(IMAGE_CSV)
-    else:
-        df_img = pd.DataFrame()
+    df_info = pd.read_csv(INFO_CSV)
+
+    df_img = pd.read_csv(IMAGE_CSV) if os.path.exists(IMAGE_CSV) else pd.DataFrame()
 
     style_input = st.text_input("🔍 스타일 번호 검색:", "")
 
     if style_input:
         df_info["Product Number"] = df_info["Product Number"].astype(str)
-        df_info = df_info[df_info["Product Number"].notna()]
         matched = df_info[df_info["Product Number"].str.contains(style_input, case=False, na=False)]
 
         if not matched.empty:
-            selected = st.selectbox("스타일 선택", matched["Product Number"].astype(str))
-            selected_index = df_info[df_info["Product Number"].astype(str) == selected].index[0]
+            selected = st.selectbox("스타일 선택", matched["Product Number"])
+            selected_index = df_info[df_info["Product Number"] == selected].index[0]
             row = df_info.loc[selected_index]
 
             st.markdown("---")
@@ -61,6 +56,7 @@ elif page == "🔍 스타일 정보 조회":
             with col2:
                 st.markdown(f"**Product Number:** `{row['Product Number']}`")
                 erp_price = st.number_input("ERP PRICE", value=float(row.get("ERP PRICE", 0.0)))
+                shein_price = st.number_input("SHEIN PRICE", value=float(row.get("SHEIN PRICE", 0.0)))
                 temu_price = st.number_input("TEMU PRICE", value=float(row.get("TEMU PRICE", 0.0)))
                 sleeve = st.text_input("SLEEVE", value=str(row.get("SLEEVE", "")))
                 neckline = st.text_input("NECKLINE", value=str(row.get("NECKLINE", "")))
@@ -73,35 +69,29 @@ elif page == "🔍 스타일 정보 조회":
 
             st.markdown("### 📏 사이즈 차트")
 
-            # 사이즈 차트 입력 블록: 줄 별 분리
             size_inputs = {}
 
-            # Top1
             st.markdown("**Top 1**")
-            top1_cols = st.columns(3)
-            top1_fields = ["TOP1_CHEST", "TOP1_LENGTH", "TOP1_SLEEVE"]
-            for col, field in zip(top1_cols, top1_fields):
+            cols_top1 = st.columns(3)
+            for col, field in zip(cols_top1, ["TOP1_CHEST", "TOP1_LENGTH", "TOP1_SLEEVE"]):
                 with col:
                     size_inputs[field] = st.number_input(field, value=float(row.get(field, 0.0)))
 
-            # Top2
             st.markdown("**Top 2**")
-            top2_cols = st.columns(3)
-            top2_fields = ["TOP2_CHEST", "TOP2_LENGTH", "TOP2_SLEEVE"]
-            for col, field in zip(top2_cols, top2_fields):
+            cols_top2 = st.columns(3)
+            for col, field in zip(cols_top2, ["TOP2_CHEST", "TOP2_LENGTH", "TOP2_SLEEVE"]):
                 with col:
                     size_inputs[field] = st.number_input(field, value=float(row.get(field, 0.0)))
 
-            # Bottom
             st.markdown("**Bottom**")
-            bottom_cols = st.columns(4)
-            bottom_fields = ["BOTTOM_WAIST", "BOTTOM_HIP", "BOTTOM_LENGTH", "BOTTOM_INSEAM"]
-            for col, field in zip(bottom_cols, bottom_fields):
+            cols_bot = st.columns(4)
+            for col, field in zip(cols_bot, ["BOTTOM_WAIST", "BOTTOM_HIP", "BOTTOM_LENGTH", "BOTTOM_INSEAM"]):
                 with col:
                     size_inputs[field] = st.number_input(field, value=float(row.get(field, 0.0)))
 
             if st.button("💾 수정 저장"):
                 df_info.at[selected_index, "ERP PRICE"] = erp_price
+                df_info.at[selected_index, "SHEIN PRICE"] = shein_price
                 df_info.at[selected_index, "TEMU PRICE"] = temu_price
                 df_info.at[selected_index, "SLEEVE"] = sleeve
                 df_info.at[selected_index, "NECKLINE"] = neckline
@@ -111,28 +101,30 @@ elif page == "🔍 스타일 정보 조회":
                 df_info.at[selected_index, "STYLE MOOD"] = style_mood
                 df_info.at[selected_index, "MODEL"] = model
                 df_info.at[selected_index, "NOTES"] = notes
+
                 for field, val in size_inputs.items():
                     df_info.at[selected_index, field] = val
 
                 df_info.to_csv(INFO_CSV, index=False)
-                st.success("✅ 저장 완료. 변경된 내용을 확인하려면 새로고침 해주세요.")
+                st.success("✅ 저장 완료")
 
         else:
             st.warning("❌ 일치하는 스타일이 없습니다.")
 
-# --- 새로운 스타일 등록 페이지 ---
+# --- 스타일 등록 ---
 elif page == "➕ 새로운 스타일 등록":
     st.title("➕ 새 스타일 등록")
 
-    if os.path.exists(INFO_CSV):
-        df_info = pd.read_csv(INFO_CSV)
-    else:
+    if not os.path.exists(INFO_CSV):
         df_info = pd.DataFrame()
+    else:
+        df_info = pd.read_csv(INFO_CSV)
 
     with st.form("new_product_form"):
         st.subheader("기본 정보")
         product_number = st.text_input("Product Number*", placeholder="예: BT1234")
         erp_price = st.number_input("ERP PRICE*", min_value=0.0, value=0.0)
+        shein_price = st.number_input("SHEIN PRICE", min_value=0.0, value=0.0)
         temu_price = st.number_input("TEMU PRICE", min_value=0.0, value=0.0)
 
         st.subheader("스타일 속성")
@@ -149,20 +141,17 @@ elif page == "➕ 새로운 스타일 등록":
         size_inputs = {}
 
         st.markdown("**Top 1**")
-        top1_cols = st.columns(3)
-        for col, field in zip(top1_cols, ["TOP1_CHEST", "TOP1_LENGTH", "TOP1_SLEEVE"]):
+        for col, field in zip(st.columns(3), ["TOP1_CHEST", "TOP1_LENGTH", "TOP1_SLEEVE"]):
             with col:
                 size_inputs[field] = st.number_input(field, min_value=0.0, value=0.0)
 
         st.markdown("**Top 2**")
-        top2_cols = st.columns(3)
-        for col, field in zip(top2_cols, ["TOP2_CHEST", "TOP2_LENGTH", "TOP2_SLEEVE"]):
+        for col, field in zip(st.columns(3), ["TOP2_CHEST", "TOP2_LENGTH", "TOP2_SLEEVE"]):
             with col:
                 size_inputs[field] = st.number_input(field, min_value=0.0, value=0.0)
 
         st.markdown("**Bottom**")
-        bottom_cols = st.columns(4)
-        for col, field in zip(bottom_cols, ["BOTTOM_WAIST", "BOTTOM_HIP", "BOTTOM_LENGTH", "BOTTOM_INSEAM"]):
+        for col, field in zip(st.columns(4), ["BOTTOM_WAIST", "BOTTOM_HIP", "BOTTOM_LENGTH", "BOTTOM_INSEAM"]):
             with col:
                 size_inputs[field] = st.number_input(field, min_value=0.0, value=0.0)
 
@@ -177,6 +166,7 @@ elif page == "➕ 새로운 스타일 등록":
                 new_row = {
                     "Product Number": product_number,
                     "ERP PRICE": erp_price,
+                    "SHEIN PRICE": shein_price,
                     "TEMU PRICE": temu_price,
                     "SLEEVE": sleeve,
                     "NECKLINE": neckline,
@@ -185,7 +175,7 @@ elif page == "➕ 새로운 스타일 등록":
                     "DETAIL": detail,
                     "STYLE MOOD": style_mood,
                     "MODEL": model,
-                    "NOTES": notes
+                    "NOTES": notes,
                 }
                 new_row.update(size_inputs)
 
@@ -195,4 +185,4 @@ elif page == "➕ 새로운 스타일 등록":
 
                 df_info = pd.concat([df_info, pd.DataFrame([new_row])], ignore_index=True)
                 df_info.to_csv(INFO_CSV, index=False)
-                st.success("🎉 스타일이 등록되었습니다. 목록에서 확인하려면 새로고침 해주세요.")
+                st.success("🎉 스타일이 등록되었습니다.")

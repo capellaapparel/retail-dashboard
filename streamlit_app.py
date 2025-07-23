@@ -1,7 +1,26 @@
 # streamlit_app.py
 import streamlit as st
 import pandas as pd
-import requests
+import os
+
+# --- 유저 정의 옵션 저장 경로 ---
+NECKLINE_FILE = "neckline_options.csv"
+DETAIL_FILE = "detail_options.csv"
+
+# --- 기본값 정의 ---
+def load_or_create_options(file_path, default_list):
+    if os.path.exists(file_path):
+        return pd.read_csv(file_path)["option"].tolist()
+    else:
+        pd.DataFrame({"option": default_list}).to_csv(file_path, index=False)
+        return default_list
+
+def save_new_option(file_path, new_option):
+    if new_option:
+        df = pd.read_csv(file_path)
+        if new_option not in df["option"].values:
+            df.loc[len(df)] = new_option
+            df.to_csv(file_path, index=False)
 
 # --- 데이터 로딩 ---
 @st.cache_data
@@ -32,9 +51,34 @@ if style_input:
 
         # --- 사이즈차트 자리 ---
         st.subheader("📏 Size Chart")
-        top1 = st.text_input("Top 1 Size (Chest, Length, Sleeve Length)")
-        top2 = st.text_input("Top 2 Size (Chest, Length, Sleeve Length)")
-        bottom = st.text_input("Bottom Size (Waist, Hip, Length, Inseam)")
+        st.markdown("**TOP 1**")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            top1_chest = st.number_input("Chest", key="top1_chest")
+        with col2:
+            top1_length = st.number_input("Length", key="top1_length")
+        with col3:
+            top1_sleeve = st.number_input("Sleeve Length", key="top1_sleeve")
+
+        st.markdown("**TOP 2**")
+        col4, col5, col6 = st.columns(3)
+        with col4:
+            top2_chest = st.number_input("Chest", key="top2_chest")
+        with col5:
+            top2_length = st.number_input("Length", key="top2_length")
+        with col6:
+            top2_sleeve = st.number_input("Sleeve Length", key="top2_sleeve")
+
+        st.markdown("**BOTTOM**")
+        col7, col8, col9, col10 = st.columns(4)
+        with col7:
+            bottom_waist = st.number_input("Waist", key="bottom_waist")
+        with col8:
+            bottom_hip = st.number_input("Hip", key="bottom_hip")
+        with col9:
+            bottom_length = st.number_input("Length", key="bottom_length")
+        with col10:
+            bottom_inseam = st.number_input("Inseam", key="bottom_inseam")
 
         # --- 상세 정보 ---
         st.subheader("💡 Product Info")
@@ -54,30 +98,33 @@ with st.form("add_style"):
     shein_price = st.number_input("SHEIN PRICE", step=0.01, key="shein")
     temu_price = st.number_input("TEMU PRICE", step=0.01, key="temu")
 
+    # --- NECKLINE 항목 불러오기 및 업데이트 ---
     default_necklines = ["Round", "Scoop", "V neck", "Halter", "Crew", "Off Shoulder", "One Shoulder", "Square", "Hooded", "Asymmetrical", "Spaghetti", "Double Strap", "Cami", "Split", "Mock", "High", "Tube", "Jacket", "Plunge", "Cut Out", "Collar", "Cowl"]
-    neckline = st.selectbox("NECKLINE", [""] + default_necklines)
+    neckline_options = load_or_create_options(NECKLINE_FILE, default_necklines)
+    neckline = st.selectbox("NECKLINE", [""] + neckline_options)
     new_neckline = st.text_input("+ 새로운 NECKLINE 추가")
-    if new_neckline and new_neckline not in default_necklines:
+    save_new_option(NECKLINE_FILE, new_neckline)
+    if new_neckline:
         neckline = new_neckline
 
+    # --- LENGTH ---
     default_lengths = ["Crop Top", "Waist Top", "Long Top", "Mini Dress", "Midi Dress", "Maxi Dress", "Mini Skirt", "Midi Skirt", "Maxi Skirt", "Shorts", "Knee", "Capri", "Full"]
     length = st.multiselect("LENGTH", default_lengths)
 
     fit = st.radio("FIT", ["Slim", "Regular", "Loose"], index=1)
 
+    # --- DETAIL 항목 불러오기 및 업데이트 ---
     default_details = ["Ruched", "Cut Out", "Drawstring", "Slit", "Button/Zipper", "Tie", "Backless", "Wrap", "Stripe", "Graphic", "Wide Leg", "Pocket", "Pleated", "Exposed Seam", "Criss Cross", "Ring", "Asymmetrical", "Mesh", "Puff", "Shirred", "Tie Dye", "Fringe", "Racer Back", "Corset", "Lace", "Tier", "Twist", "Lettuce Trim"]
-    detail = st.multiselect("DETAIL", default_details)
+    detail_options = load_or_create_options(DETAIL_FILE, default_details)
+    detail = st.multiselect("DETAIL", detail_options)
     new_detail = st.text_input("+ 새로운 DETAIL 추가")
+    save_new_option(DETAIL_FILE, new_detail)
     if new_detail and new_detail not in detail:
         detail.append(new_detail)
 
     style_mood = st.selectbox("STYLE MOOD", ["Sexy", "Casual", "Lounge", "Formal", "Activewear"])
     model = st.multiselect("MODEL", ["Latina", "Black", "Caucasian", "Plus", "Asian"])
     notes = st.text_area("NOTES")
-
-    top1_new = st.text_input("Top 1 Size Chart", key="top1")
-    top2_new = st.text_input("Top 2 Size Chart", key="top2")
-    bottom_new = st.text_input("Bottom Size Chart", key="bottom")
 
     submitted = st.form_submit_button("추가하기")
     if submitted:

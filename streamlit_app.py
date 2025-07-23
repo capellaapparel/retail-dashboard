@@ -3,37 +3,9 @@ import streamlit as st
 import pandas as pd
 import os
 
-# --- 유저 정의 옵션 저장 경로 ---
-NECKLINE_FILE = "neckline_options.csv"
-DETAIL_FILE = "detail_options.csv"
-PRODUCT_CSV = "product_master.csv"
-
-# --- 기본값 정의 ---
-def load_or_create_options(file_path, default_list):
-    if os.path.exists(file_path):
-        return pd.read_csv(file_path)["option"].tolist()
-    else:
-        pd.DataFrame({"option": default_list}).to_csv(file_path, index=False)
-        return default_list
-
-def save_new_option(file_path, new_option):
-    if new_option:
-        df = pd.read_csv(file_path)
-        if new_option not in df["option"].values:
-            df.loc[len(df)] = new_option
-            df.to_csv(file_path, index=False)
-
-# --- 데이터 로딩 ---
-@st.cache_data
-def load_data():
-    try:
-        df = pd.read_csv(PRODUCT_CSV, index_col=0)
-        df.columns = df.columns.str.strip()  # 공백 제거
-        return df
-    except FileNotFoundError:
-        return pd.DataFrame()
-
-df = load_data()
+# --- 데이터 파일 경로 ---
+INFO_CSV = "product_info.csv"
+IMAGE_CSV = "product_images.csv"
 
 # --- Streamlit 페이지 구분 ---
 page = st.sidebar.radio("페이지 선택", ["🏠 홈", "🔍 스타일 정보 조회", "➕ 새로운 스타일 등록"])
@@ -54,39 +26,66 @@ if page == "🏠 홈":
 # --- 스타일 정보 조회 페이지 ---
 elif page == "🔍 스타일 정보 조회":
     st.title("Product Info Dashboard")
+
+    @st.cache_data
+    def load_data():
+        df_info = pd.read_csv(INFO_CSV)
+        df_img = pd.read_csv(IMAGE_CSV)
+        return df_info, df_img
+
+    df_info, df_img = load_data()
+
     style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
 
     if style_input:
-        if 'Product Number' not in df.columns:
-            st.error("❌ 'Product Number' 컬럼이 존재하지 않습니다. CSV 파일을 확인해주세요.")
+        matched = df_info[df_info["Product Number"].astype(str).str.contains(style_input, case=False, na=False)]
+
+        if not matched.empty:
+            selected = st.selectbox("스타일 선택", matched["Product Number"].astype(str))
+            product_info = df_info[df_info["Product Number"] == selected].iloc[0]
+            product_img = df_img[df_img["Product Number"] == selected].iloc[0] if not df_img[df_img["Product Number"] == selected].empty else {}
+
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                if product_img and pd.notna(product_img.get("First Image", "")):
+                    st.image(product_img["First Image"], width=300)
+                else:
+                    st.markdown("_이미지가 없습니다._")
+
+            with col2:
+                st.markdown(f"**Product Number:** {product_info['Product Number']}")
+                st.markdown(f"**Product Name:** {product_img.get('default product name(en)', '')}")
+                st.markdown(f"**ERP PRICE:** ${product_info.get('ERP PRICE', 0):.2f}")
+                st.markdown(f"**SHEIN PRICE:** ${product_img.get('SHEIN PRICE', 0):.2f}")
+                st.markdown(f"**SLEEVE:** {product_info.get('SLEEVE', '')}")
+                st.markdown(f"**NECKLINE:** {product_info.get('NECKLINE', '')}")
+                st.markdown(f"**LENGTH:** {product_info.get('LENGTH', '')}")
+                st.markdown(f"**FIT:** {product_info.get('FIT', '')}")
+                st.markdown(f"**DETAIL:** {product_info.get('DETAIL', '')}")
+                st.markdown(f"**STYLE MOOD:** {product_info.get('STYLE MOOD', '')}")
+                st.markdown(f"**MODEL:** {product_info.get('MODEL', '')}")
+                st.markdown(f"**NOTES:** {product_info.get('NOTES', '')}")
+
+            st.markdown("---")
+            st.markdown("### 📏 Size Chart")
+
+            size_fields = {
+                "Top 1": ["TOP1_CHEST", "TOP1_LENGTH", "TOP1_SLEEVE"],
+                "Top 2": ["TOP2_CHEST", "TOP2_LENGTH", "TOP2_SLEEVE"],
+                "Bottom": ["BOTTOM_WAIST", "BOTTOM_HIP", "BOTTOM_LENGTH", "BOTTOM_INSEAM"]
+            }
+
+            for section, fields in size_fields.items():
+                size_data = []
+                for field in fields:
+                    if field in product_info and pd.notna(product_info[field]):
+                        label = field.split("_")[1].capitalize()
+                        size_data.append((label, product_info[field]))
+                if size_data:
+                    st.markdown(f"**{section}**")
+                    st.table(pd.DataFrame(size_data, columns=["Measurement", "cm"]))
         else:
-            matched = df[df['Product Number'].astype(str).str.contains(style_input, case=False, na=False)]
-            if not matched.empty:
-                selected = st.selectbox("스타일 선택", matched['Product Number'] + " - " + matched.get('Default product name(en)', ""))
-                selected_style = selected.split(" - ")[0]
-                product = df[df['Product Number'] == selected_style].iloc[0]
-
-                if 'First Image' in product and pd.notna(product['First Image']):
-                    st.image(product['First Image'], width=300)
-
-                st.subheader("✏️ 수정 가능 항목")
-                erp_price = st.number_input("ERP PRICE", value=product.get("ERP PRICE", 0.0))
-                shein_price = st.number_input("SHEIN PRICE", value=product.get("Special Offer Price(shein-us_USD)", 0.0))
-                temu_price = st.number_input("TEMU PRICE", value=product.get("TEMU PRICE", 0.0))
-                notes = st.text_area("NOTES", value=product.get("NOTES", ""))
-
-                if st.button("💾 수정 저장"):
-                    df.loc[df['Product Number'] == selected_style, 'ERP PRICE'] = erp_price
-                    df.loc[df['Product Number'] == selected_style, 'SHEIN PRICE'] = shein_price
-                    df.loc[df['Product Number'] == selected_style, 'TEMU PRICE'] = temu_price
-                    df.loc[df['Product Number'] == selected_style, 'NOTES'] = notes
-                    df.to_csv(PRODUCT_CSV, index=False)
-                    st.success("✅ 수정사항이 저장되었습니다.")
-
-                st.subheader("📏 Size Chart")
-                st.markdown("(표시용 구현은 다음 단계에서 진행)")
-            else:
-                st.warning("해당 스타일을 찾을 수 없습니다.")
+            st.warning("❌ 해당 스타일을 찾을 수 없습니다.")
 
 # --- 새로운 스타일 등록 페이지 ---
 elif page == "➕ 새로운 스타일 등록":

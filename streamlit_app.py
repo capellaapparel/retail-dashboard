@@ -1,4 +1,3 @@
-
 # streamlit_app.py
 import streamlit as st
 import pandas as pd
@@ -55,11 +54,23 @@ with st.form("add_style"):
     shein_price = st.number_input("SHEIN PRICE", step=0.01, key="shein")
     temu_price = st.number_input("TEMU PRICE", step=0.01, key="temu")
 
-    sleeve = st.selectbox("SLEEVE", ["", "Sleeveless", "Short", "3/4", "Long"])
-    neckline = st.selectbox("NECKLINE", ["", "Round", "V neck", "Halter", "Crew", "Off Shoulder", "One Shoulder"])
-    length = st.multiselect("LENGTH", ["Crop Top", "Mini Dress", "Maxi Dress", "Mini Skirt", "Shorts", "Capri"])
+    default_necklines = ["Round", "Scoop", "V neck", "Halter", "Crew", "Off Shoulder", "One Shoulder", "Square", "Hooded", "Asymmetrical", "Spaghetti", "Double Strap", "Cami", "Split", "Mock", "High", "Tube", "Jacket", "Plunge", "Cut Out", "Collar", "Cowl"]
+    neckline = st.selectbox("NECKLINE", [""] + default_necklines)
+    new_neckline = st.text_input("+ 새로운 NECKLINE 추가")
+    if new_neckline and new_neckline not in default_necklines:
+        neckline = new_neckline
+
+    default_lengths = ["Crop Top", "Waist Top", "Long Top", "Mini Dress", "Midi Dress", "Maxi Dress", "Mini Skirt", "Midi Skirt", "Maxi Skirt", "Shorts", "Knee", "Capri", "Full"]
+    length = st.multiselect("LENGTH", default_lengths)
+
     fit = st.radio("FIT", ["Slim", "Regular", "Loose"], index=1)
-    detail = st.multiselect("DETAIL", ["Ruched", "Cut Out", "Drawstring", "Slit", "Tie", "Backless"])
+
+    default_details = ["Ruched", "Cut Out", "Drawstring", "Slit", "Button/Zipper", "Tie", "Backless", "Wrap", "Stripe", "Graphic", "Wide Leg", "Pocket", "Pleated", "Exposed Seam", "Criss Cross", "Ring", "Asymmetrical", "Mesh", "Puff", "Shirred", "Tie Dye", "Fringe", "Racer Back", "Corset", "Lace", "Tier", "Twist", "Lettuce Trim"]
+    detail = st.multiselect("DETAIL", default_details)
+    new_detail = st.text_input("+ 새로운 DETAIL 추가")
+    if new_detail and new_detail not in detail:
+        detail.append(new_detail)
+
     style_mood = st.selectbox("STYLE MOOD", ["Sexy", "Casual", "Lounge", "Formal", "Activewear"])
     model = st.multiselect("MODEL", ["Latina", "Black", "Caucasian", "Plus", "Asian"])
     notes = st.text_area("NOTES")

@@ -72,15 +72,32 @@ elif page == "🔍 스타일 정보 조회":
                 notes = st.text_area("NOTES", value=str(row.get("NOTES", "")))
 
             st.markdown("### 📏 사이즈 차트")
-            size_fields = [
-                "TOP1_CHEST", "TOP1_LENGTH", "TOP1_SLEEVE",
-                "TOP2_CHEST", "TOP2_LENGTH", "TOP2_SLEEVE",
-                "BOTTOM_WAIST", "BOTTOM_HIP", "BOTTOM_LENGTH", "BOTTOM_INSEAM"
-            ]
+
+            # 사이즈 차트 입력 블록: 줄 별 분리
             size_inputs = {}
-            cols = st.columns(5)
-            for i, field in enumerate(size_fields):
-                with cols[i % 5]:
+
+            # Top1
+            st.markdown("**Top 1**")
+            top1_cols = st.columns(3)
+            top1_fields = ["TOP1_CHEST", "TOP1_LENGTH", "TOP1_SLEEVE"]
+            for col, field in zip(top1_cols, top1_fields):
+                with col:
+                    size_inputs[field] = st.number_input(field, value=float(row.get(field, 0.0)))
+
+            # Top2
+            st.markdown("**Top 2**")
+            top2_cols = st.columns(3)
+            top2_fields = ["TOP2_CHEST", "TOP2_LENGTH", "TOP2_SLEEVE"]
+            for col, field in zip(top2_cols, top2_fields):
+                with col:
+                    size_inputs[field] = st.number_input(field, value=float(row.get(field, 0.0)))
+
+            # Bottom
+            st.markdown("**Bottom**")
+            bottom_cols = st.columns(4)
+            bottom_fields = ["BOTTOM_WAIST", "BOTTOM_HIP", "BOTTOM_LENGTH", "BOTTOM_INSEAM"]
+            for col, field in zip(bottom_cols, bottom_fields):
+                with col:
                     size_inputs[field] = st.number_input(field, value=float(row.get(field, 0.0)))
 
             if st.button("💾 수정 저장"):
@@ -98,8 +115,7 @@ elif page == "🔍 스타일 정보 조회":
                     df_info.at[selected_index, field] = val
 
                 df_info.to_csv(INFO_CSV, index=False)
-                st.success("✅ 저장 완료")
-                st.experimental_rerun()
+                st.success("✅ 저장 완료. 변경된 내용을 확인하려면 새로고침 해주세요.")
 
         else:
             st.warning("❌ 일치하는 스타일이 없습니다.")
@@ -130,15 +146,24 @@ elif page == "➕ 새로운 스타일 등록":
         notes = st.text_area("NOTES")
 
         st.subheader("사이즈 차트")
-        size_fields = [
-            "TOP1_CHEST", "TOP1_LENGTH", "TOP1_SLEEVE",
-            "TOP2_CHEST", "TOP2_LENGTH", "TOP2_SLEEVE",
-            "BOTTOM_WAIST", "BOTTOM_HIP", "BOTTOM_LENGTH", "BOTTOM_INSEAM"
-        ]
         size_inputs = {}
-        cols = st.columns(5)
-        for i, field in enumerate(size_fields):
-            with cols[i % 5]:
+
+        st.markdown("**Top 1**")
+        top1_cols = st.columns(3)
+        for col, field in zip(top1_cols, ["TOP1_CHEST", "TOP1_LENGTH", "TOP1_SLEEVE"]):
+            with col:
+                size_inputs[field] = st.number_input(field, min_value=0.0, value=0.0)
+
+        st.markdown("**Top 2**")
+        top2_cols = st.columns(3)
+        for col, field in zip(top2_cols, ["TOP2_CHEST", "TOP2_LENGTH", "TOP2_SLEEVE"]):
+            with col:
+                size_inputs[field] = st.number_input(field, min_value=0.0, value=0.0)
+
+        st.markdown("**Bottom**")
+        bottom_cols = st.columns(4)
+        for col, field in zip(bottom_cols, ["BOTTOM_WAIST", "BOTTOM_HIP", "BOTTOM_LENGTH", "BOTTOM_INSEAM"]):
+            with col:
                 size_inputs[field] = st.number_input(field, min_value=0.0, value=0.0)
 
         submitted = st.form_submit_button("✅ 스타일 등록")
@@ -170,5 +195,4 @@ elif page == "➕ 새로운 스타일 등록":
 
                 df_info = pd.concat([df_info, pd.DataFrame([new_row])], ignore_index=True)
                 df_info.to_csv(INFO_CSV, index=False)
-                st.success("🎉 스타일이 등록되었습니다.")
-                st.experimental_rerun()
+                st.success("🎉 스타일이 등록되었습니다. 목록에서 확인하려면 새로고침 해주세요.")

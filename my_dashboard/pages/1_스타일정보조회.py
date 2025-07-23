@@ -1,61 +1,80 @@
+# streamlit_app.py
 import streamlit as st
 import pandas as pd
+import os
 
+# --- 유저 정의 옵션 저장 경로 ---
+NECKLINE_FILE = "neckline_options.csv"
+DETAIL_FILE = "detail_options.csv"
+PRODUCT_CSV = "product_master.csv"
+
+# --- 기본값 정의 ---
+def load_or_create_options(file_path, default_list):
+    if os.path.exists(file_path):
+        return pd.read_csv(file_path)["option"].tolist()
+    else:
+        pd.DataFrame({"option": default_list}).to_csv(file_path, index=False)
+        return default_list
+
+def save_new_option(file_path, new_option):
+    if new_option:
+        df = pd.read_csv(file_path)
+        if new_option not in df["option"].values:
+            df.loc[len(df)] = new_option
+            df.to_csv(file_path, index=False)
+
+# --- 데이터 로딩 ---
 @st.cache_data
 def load_data():
     try:
-        return pd.read_csv("shein_sales_summary.csv")
+        df = pd.read_csv(PRODUCT_CSV)
+        return df
     except FileNotFoundError:
         return pd.DataFrame()
 
 df = load_data()
 
-st.title("Product Info Dashboard")
+# --- Streamlit 페이지 구분 ---
+page = st.sidebar.radio("페이지 선택", ["🔍 스타일 정보 조회", "➕ 새로운 스타일 등록"])
 
-style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
+# --- 스타일 정보 조회 페이지 ---
+if page == "🔍 스타일 정보 조회":
+    st.title("Product Info Dashboard")
+    style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
 
-if style_input:
-    matched = df[df['SPU'].str.contains(style_input, case=False, na=False)]
-    if not matched.empty:
-        selected = st.selectbox("스타일 선택", matched['SPU'] + " - " + matched['Goods name'])
-        selected_spu = selected.split(" - ")[0]
-        product = df[df['SPU'] == selected_spu].iloc[0]
+    if style_input:
+        matched = df[df['Product Number'].astype(str).str.contains(style_input, case=False, na=False)]
+        if not matched.empty:
+            selected = st.selectbox("스타일 선택", matched['Product Number'] + " - " + matched['Default product name(en)'])
+            selected_style = selected.split(" - ")[0]
+            product = df[df['Product Number'] == selected_style].iloc[0]
 
-        st.image(product['Product image link'], width=300)
+            # --- 이미지 ---
+            st.image(product['First Image'], width=300)
 
-        st.subheader("📏 Size Chart")
-        st.markdown("**TOP 1**")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.number_input("Chest", key="top1_chest")
-        with col2:
-            st.number_input("Length", key="top1_length")
-        with col3:
-            st.number_input("Sleeve Length", key="top1_sleeve")
+            # --- 수정 가능 항목들 ---
+            st.subheader("✏️ 수정 가능 항목")
+            erp_price = st.number_input("ERP PRICE", value=product.get("ERP PRICE", 0.0))
+            shein_price = st.number_input("SHEIN PRICE", value=product.get("Special Offer Price(shein-us_USD)", 0.0))
+            temu_price = st.number_input("TEMU PRICE", value=product.get("TEMU PRICE", 0.0))
+            notes = st.text_area("NOTES", value=product.get("NOTES", ""))
 
-        st.markdown("**TOP 2**")
-        col4, col5, col6 = st.columns(3)
-        with col4:
-            st.number_input("Chest", key="top2_chest")
-        with col5:
-            st.number_input("Length", key="top2_length")
-        with col6:
-            st.number_input("Sleeve Length", key="top2_sleeve")
+            if st.button("💾 수정 저장"):
+                df.loc[df['Product Number'] == selected_style, 'ERP PRICE'] = erp_price
+                df.loc[df['Product Number'] == selected_style, 'SHEIN PRICE'] = shein_price
+                df.loc[df['Product Number'] == selected_style, 'TEMU PRICE'] = temu_price
+                df.loc[df['Product Number'] == selected_style, 'NOTES'] = notes
+                df.to_csv(PRODUCT_CSV, index=False)
+                st.success("✅ 수정사항이 저장되었습니다.")
 
-        st.markdown("**BOTTOM**")
-        col7, col8, col9, col10 = st.columns(4)
-        with col7:
-            st.number_input("Waist", key="bottom_waist")
-        with col8:
-            st.number_input("Hip", key="bottom_hip")
-        with col9:
-            st.number_input("Length", key="bottom_length")
-        with col10:
-            st.number_input("Inseam", key="bottom_inseam")
+            # --- 사이즈차트 자리 (비표준, 추가 개발 필요) ---
+            st.subheader("📏 Size Chart")
+            st.markdown("(표시용 구현은 다음 단계에서 진행)")
 
-        st.subheader("💡 Product Info")
-        st.write(f"**ERP PRICE**: {product['Gross Merchandise Volume']}")
-        st.write("**SHEIN PRICE**: 자동입력 예정")
-        st.write("**TEMU PRICE**: 자동입력 예정")
-    else:
-        st.warning("해당 스타일을 찾을 수 없습니다.")
+        else:
+            st.warning("해당 스타일을 찾을 수 없습니다.")
+
+# --- 새로운 스타일 등록 페이지 ---
+elif page == "➕ 새로운 스타일 등록":
+    st.title("➕ 새 스타일 등록")
+    st.warning("현재 이 기능은 표시만 되고 CSV 저장은 수동입니다.")

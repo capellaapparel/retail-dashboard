@@ -27,7 +27,7 @@ def save_new_option(file_path, new_option):
 @st.cache_data
 def load_data():
     try:
-        df = pd.read_csv(PRODUCT_CSV)
+        df = pd.read_csv(PRODUCT_CSV, index_col=0)
         df.columns = df.columns.str.strip()  # 공백 제거
         return df
     except FileNotFoundError:

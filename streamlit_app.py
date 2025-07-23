@@ -44,7 +44,7 @@ elif page == "🔍 스타일 정보 조회":
 
         if not matched.empty:
            selected = st.selectbox("스타일 선택", matched["Product Number"].astype(str))
-selected_index = df_info[df_info["Product Number"].astype(str) == selected].index[0]
+           selected_index = df_info[df_info["Product Number"].astype(str) == selected].index[0]
             product_info = df_info.loc[selected_index]
             img_rows = df_img[df_img["Product Number"] == selected]
             product_img = img_rows.iloc[0] if not img_rows.empty else None

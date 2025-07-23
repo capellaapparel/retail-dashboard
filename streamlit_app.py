@@ -9,6 +9,29 @@ st.set_page_config(page_title="Capella Product Dashboard", layout="wide")
 st.sidebar.title("📂 Capella Dashboard")
 page = st.sidebar.radio("페이지 선택", ["🏠 홈", "🔍 스타일 정보 조회", "➕ 새로운 스타일 등록"])
 
+# --- 드롭다운 옵션 목록 ---
+STYLE_OPTIONS = {
+    "SLEEVE": ["Sleeveless", "Short", "3/4", "Long"],
+    "NECKLINE": ["Round", "Scoop", "V neck", "Halter", "Crew", "Off Shoulder", "One Shoulder", "Square", "Hooded", "Asymmetrical", "Spaghetti", "Double Strap", "Cami", "Split", "Mock", "High", "Tube", "Jacket", "Plunge", "Cut Out", "Collar", "Cowl"],
+    "LENGTH": ["Crop Top", "Waist Top", "Long Top", "Mini Dress", "Midi Dress", "Maxi Dress", "Mini Skirt", "Midi Skirt", "Maxi Skirt", "Shorts", "Knee", "Capri", "Full"],
+    "FIT": ["Slim", "Regular", "Loose"],
+    "DETAIL": ["Ruched", "Cut Out", "Drawstring", "Slit", "Button", "Zipper", "Tie", "Backless", "Wrap", "Stripe", "Graphic", "Wide Leg", "Pocket", "Pleated", "Exposed Seam", "Criss Cross", "Ring", "Asymmetrical", "Mesh", "Puff", "Shirred", "Tie Dye", "Fringe", "Racer Back", "Corset", "Lace", "Tier", "Twist", "Lettuce Trim"],
+    "STYLE MOOD": ["Sexy", "Casual", "Lounge", "Formal", "Activewear"],
+    "MODEL": ["Latina", "Black", "Caucasian", "Plus", "Asian"]
+}
+
+def dropdown_or_input(label, value, options):
+    """드롭다운 + 직접입력 UI"""
+    options = list(dict.fromkeys(options))  # 중복 제거
+    if value in options:
+        method = st.selectbox(f"{label} 선택 방식", ["선택", "직접 입력"], key=f"{label}_method", index=0)
+    else:
+        method = "직접 입력"
+    if method == "선택":
+        return st.selectbox(label, options, index=options.index(value) if value in options else 0, key=label)
+    else:
+        return st.text_input(f"{label} (직접 입력)", value=value, key=f"{label}_custom")
+
 # --- 홈 ---
 if page == "🏠 홈":
     st.title("👋 Welcome to Capella Dashboard")
@@ -29,11 +52,9 @@ elif page == "🔍 스타일 정보 조회":
         st.stop()
 
     df_info = pd.read_csv(INFO_CSV)
-
     df_img = pd.read_csv(IMAGE_CSV) if os.path.exists(IMAGE_CSV) else pd.DataFrame()
 
     style_input = st.text_input("🔍 스타일 번호 검색:", "")
-
     if style_input:
         df_info["Product Number"] = df_info["Product Number"].astype(str)
         matched = df_info[df_info["Product Number"].str.contains(style_input, case=False, na=False)]
@@ -45,7 +66,6 @@ elif page == "🔍 스타일 정보 조회":
 
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
-
             with col1:
                 img_row = df_img[df_img["Product Number"] == selected]
                 if not img_row.empty and pd.notna(img_row.iloc[0].get("First Image", "")):
@@ -58,34 +78,27 @@ elif page == "🔍 스타일 정보 조회":
                 erp_price = st.number_input("ERP PRICE", value=float(row.get("ERP PRICE", 0.0)))
                 shein_price = st.number_input("SHEIN PRICE", value=float(row.get("SHEIN PRICE", 0.0)))
                 temu_price = st.number_input("TEMU PRICE", value=float(row.get("TEMU PRICE", 0.0)))
-                sleeve = st.text_input("SLEEVE", value=str(row.get("SLEEVE", "")))
-                neckline = st.text_input("NECKLINE", value=str(row.get("NECKLINE", "")))
-                length = st.text_input("LENGTH", value=str(row.get("LENGTH", "")))
-                fit = st.text_input("FIT", value=str(row.get("FIT", "")))
-                detail = st.text_input("DETAIL", value=str(row.get("DETAIL", "")))
-                style_mood = st.text_input("STYLE MOOD", value=str(row.get("STYLE MOOD", "")))
-                model = st.text_input("MODEL", value=str(row.get("MODEL", "")))
+
+                inputs = {}
+                for field in ["SLEEVE", "NECKLINE", "LENGTH", "FIT", "DETAIL", "STYLE MOOD", "MODEL"]:
+                    inputs[field] = dropdown_or_input(field, str(row.get(field, "")), STYLE_OPTIONS[field])
                 notes = st.text_area("NOTES", value=str(row.get("NOTES", "")))
 
             st.markdown("### 📏 사이즈 차트")
 
             size_inputs = {}
-
             st.markdown("**Top 1**")
-            cols_top1 = st.columns(3)
-            for col, field in zip(cols_top1, ["TOP1_CHEST", "TOP1_LENGTH", "TOP1_SLEEVE"]):
+            for col, field in zip(st.columns(3), ["TOP1_CHEST", "TOP1_LENGTH", "TOP1_SLEEVE"]):
                 with col:
                     size_inputs[field] = st.number_input(field, value=float(row.get(field, 0.0)))
 
             st.markdown("**Top 2**")
-            cols_top2 = st.columns(3)
-            for col, field in zip(cols_top2, ["TOP2_CHEST", "TOP2_LENGTH", "TOP2_SLEEVE"]):
+            for col, field in zip(st.columns(3), ["TOP2_CHEST", "TOP2_LENGTH", "TOP2_SLEEVE"]):
                 with col:
                     size_inputs[field] = st.number_input(field, value=float(row.get(field, 0.0)))
 
             st.markdown("**Bottom**")
-            cols_bot = st.columns(4)
-            for col, field in zip(cols_bot, ["BOTTOM_WAIST", "BOTTOM_HIP", "BOTTOM_LENGTH", "BOTTOM_INSEAM"]):
+            for col, field in zip(st.columns(4), ["BOTTOM_WAIST", "BOTTOM_HIP", "BOTTOM_LENGTH", "BOTTOM_INSEAM"]):
                 with col:
                     size_inputs[field] = st.number_input(field, value=float(row.get(field, 0.0)))
 
@@ -93,18 +106,11 @@ elif page == "🔍 스타일 정보 조회":
                 df_info.at[selected_index, "ERP PRICE"] = erp_price
                 df_info.at[selected_index, "SHEIN PRICE"] = shein_price
                 df_info.at[selected_index, "TEMU PRICE"] = temu_price
-                df_info.at[selected_index, "SLEEVE"] = sleeve
-                df_info.at[selected_index, "NECKLINE"] = neckline
-                df_info.at[selected_index, "LENGTH"] = length
-                df_info.at[selected_index, "FIT"] = fit
-                df_info.at[selected_index, "DETAIL"] = detail
-                df_info.at[selected_index, "STYLE MOOD"] = style_mood
-                df_info.at[selected_index, "MODEL"] = model
+                for k, v in inputs.items():
+                    df_info.at[selected_index, k] = v
                 df_info.at[selected_index, "NOTES"] = notes
-
                 for field, val in size_inputs.items():
                     df_info.at[selected_index, field] = val
-
                 df_info.to_csv(INFO_CSV, index=False)
                 st.success("✅ 저장 완료")
 
@@ -128,13 +134,9 @@ elif page == "➕ 새로운 스타일 등록":
         temu_price = st.number_input("TEMU PRICE", min_value=0.0, value=0.0)
 
         st.subheader("스타일 속성")
-        sleeve = st.text_input("SLEEVE")
-        neckline = st.text_input("NECKLINE")
-        length = st.text_input("LENGTH")
-        fit = st.text_input("FIT")
-        detail = st.text_input("DETAIL")
-        style_mood = st.text_input("STYLE MOOD")
-        model = st.text_input("MODEL")
+        inputs = {}
+        for field in ["SLEEVE", "NECKLINE", "LENGTH", "FIT", "DETAIL", "STYLE MOOD", "MODEL"]:
+            inputs[field] = dropdown_or_input(field, "", STYLE_OPTIONS[field])
         notes = st.text_area("NOTES")
 
         st.subheader("사이즈 차트")
@@ -168,15 +170,9 @@ elif page == "➕ 새로운 스타일 등록":
                     "ERP PRICE": erp_price,
                     "SHEIN PRICE": shein_price,
                     "TEMU PRICE": temu_price,
-                    "SLEEVE": sleeve,
-                    "NECKLINE": neckline,
-                    "LENGTH": length,
-                    "FIT": fit,
-                    "DETAIL": detail,
-                    "STYLE MOOD": style_mood,
-                    "MODEL": model,
                     "NOTES": notes,
                 }
+                new_row.update(inputs)
                 new_row.update(size_inputs)
 
                 for col in new_row:

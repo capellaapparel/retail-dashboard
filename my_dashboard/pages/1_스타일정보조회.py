@@ -28,6 +28,7 @@ def save_new_option(file_path, new_option):
 def load_data():
     try:
         df = pd.read_csv(PRODUCT_CSV)
+        df.columns = df.columns.str.strip()  # 공백 제거
         return df
     except FileNotFoundError:
         return pd.DataFrame()
@@ -43,36 +44,40 @@ if page == "🔍 스타일 정보 조회":
     style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
 
     if style_input:
-        matched = df[df['Product Number'].astype(str).str.contains(style_input, case=False, na=False)]
-        if not matched.empty:
-            selected = st.selectbox("스타일 선택", matched['Product Number'] + " - " + matched['Default product name(en)'])
-            selected_style = selected.split(" - ")[0]
-            product = df[df['Product Number'] == selected_style].iloc[0]
-
-            # --- 이미지 ---
-            st.image(product['First Image'], width=300)
-
-            # --- 수정 가능 항목들 ---
-            st.subheader("✏️ 수정 가능 항목")
-            erp_price = st.number_input("ERP PRICE", value=product.get("ERP PRICE", 0.0))
-            shein_price = st.number_input("SHEIN PRICE", value=product.get("Special Offer Price(shein-us_USD)", 0.0))
-            temu_price = st.number_input("TEMU PRICE", value=product.get("TEMU PRICE", 0.0))
-            notes = st.text_area("NOTES", value=product.get("NOTES", ""))
-
-            if st.button("💾 수정 저장"):
-                df.loc[df['Product Number'] == selected_style, 'ERP PRICE'] = erp_price
-                df.loc[df['Product Number'] == selected_style, 'SHEIN PRICE'] = shein_price
-                df.loc[df['Product Number'] == selected_style, 'TEMU PRICE'] = temu_price
-                df.loc[df['Product Number'] == selected_style, 'NOTES'] = notes
-                df.to_csv(PRODUCT_CSV, index=False)
-                st.success("✅ 수정사항이 저장되었습니다.")
-
-            # --- 사이즈차트 자리 (비표준, 추가 개발 필요) ---
-            st.subheader("📏 Size Chart")
-            st.markdown("(표시용 구현은 다음 단계에서 진행)")
-
+        if 'Product Number' not in df.columns:
+            st.error("❌ 'Product Number' 컬럼이 존재하지 않습니다. CSV 파일을 확인해주세요.")
         else:
-            st.warning("해당 스타일을 찾을 수 없습니다.")
+            matched = df[df['Product Number'].astype(str).str.contains(style_input, case=False, na=False)]
+            if not matched.empty:
+                selected = st.selectbox("스타일 선택", matched['Product Number'] + " - " + matched.get('Default product name(en)', ""))
+                selected_style = selected.split(" - ")[0]
+                product = df[df['Product Number'] == selected_style].iloc[0]
+
+                # --- 이미지 ---
+                if 'First Image' in product and pd.notna(product['First Image']):
+                    st.image(product['First Image'], width=300)
+
+                # --- 수정 가능 항목들 ---
+                st.subheader("✏️ 수정 가능 항목")
+                erp_price = st.number_input("ERP PRICE", value=product.get("ERP PRICE", 0.0))
+                shein_price = st.number_input("SHEIN PRICE", value=product.get("Special Offer Price(shein-us_USD)", 0.0))
+                temu_price = st.number_input("TEMU PRICE", value=product.get("TEMU PRICE", 0.0))
+                notes = st.text_area("NOTES", value=product.get("NOTES", ""))
+
+                if st.button("💾 수정 저장"):
+                    df.loc[df['Product Number'] == selected_style, 'ERP PRICE'] = erp_price
+                    df.loc[df['Product Number'] == selected_style, 'SHEIN PRICE'] = shein_price
+                    df.loc[df['Product Number'] == selected_style, 'TEMU PRICE'] = temu_price
+                    df.loc[df['Product Number'] == selected_style, 'NOTES'] = notes
+                    df.to_csv(PRODUCT_CSV, index=False)
+                    st.success("✅ 수정사항이 저장되었습니다.")
+
+                # --- 사이즈차트 자리 (비표준, 추가 개발 필요) ---
+                st.subheader("📏 Size Chart")
+                st.markdown("(표시용 구현은 다음 단계에서 진행)")
+
+            else:
+                st.warning("해당 스타일을 찾을 수 없습니다.")
 
 # --- 새로운 스타일 등록 페이지 ---
 elif page == "➕ 새로운 스타일 등록":

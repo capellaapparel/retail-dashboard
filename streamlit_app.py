@@ -43,20 +43,21 @@ elif page == "🔍 스타일 정보 조회":
         if not matched.empty:
             selected = st.selectbox("스타일 선택", matched["Product Number"].astype(str))
             product_info = df_info[df_info["Product Number"] == selected].iloc[0]
-            product_img = df_img[df_img["Product Number"] == selected].iloc[0] if not df_img[df_img["Product Number"] == selected].empty else {}
+            img_rows = df_img[df_img["Product Number"] == selected]
+            product_img = img_rows.iloc[0] if not img_rows.empty else None
 
             col1, col2 = st.columns([1, 2])
             with col1:
-                if product_img and pd.notna(product_img.get("First Image", "")):
+                if product_img is not None and pd.notna(product_img.get("First Image", "")):
                     st.image(product_img["First Image"], width=300)
                 else:
                     st.markdown("_이미지가 없습니다._")
 
             with col2:
                 st.markdown(f"**Product Number:** {product_info['Product Number']}")
-                st.markdown(f"**Product Name:** {product_img.get('default product name(en)', '')}")
+                st.markdown(f"**Product Name:** {product_img.get('default product name(en)', '') if product_img is not None else ''}")
                 st.markdown(f"**ERP PRICE:** ${product_info.get('ERP PRICE', 0):.2f}")
-                st.markdown(f"**SHEIN PRICE:** ${product_img.get('SHEIN PRICE', 0):.2f}")
+                st.markdown(f"**SHEIN PRICE:** ${product_img.get('SHEIN PRICE', 0):.2f}" if product_img is not None else "")
                 st.markdown(f"**SLEEVE:** {product_info.get('SLEEVE', '')}")
                 st.markdown(f"**NECKLINE:** {product_info.get('NECKLINE', '')}")
                 st.markdown(f"**LENGTH:** {product_info.get('LENGTH', '')}")

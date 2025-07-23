@@ -42,7 +42,8 @@ elif page == "🔍 스타일 정보 조회":
 
         if not matched.empty:
             selected = st.selectbox("스타일 선택", matched["Product Number"].astype(str))
-            product_info = df_info[df_info["Product Number"] == selected].iloc[0]
+            selected_index = df_info[df_info["Product Number"] == selected].index[0]
+            product_info = df_info.loc[selected_index]
             img_rows = df_img[df_img["Product Number"] == selected]
             product_img = img_rows.iloc[0] if not img_rows.empty else None
 
@@ -56,20 +57,22 @@ elif page == "🔍 스타일 정보 조회":
             with col2:
                 st.markdown(f"**Product Number:** {product_info['Product Number']}")
                 st.markdown(f"**Product Name:** {product_img.get('default product name(en)', '') if product_img is not None else ''}")
-                st.markdown(f"**ERP PRICE:** ${product_info.get('ERP PRICE', 0):.2f}")
-                st.markdown(f"**SHEIN PRICE:** ${product_img.get('SHEIN PRICE', 0):.2f}" if product_img is not None else "")
-                st.markdown(f"**SLEEVE:** {product_info.get('SLEEVE', '')}")
-                st.markdown(f"**NECKLINE:** {product_info.get('NECKLINE', '')}")
-                st.markdown(f"**LENGTH:** {product_info.get('LENGTH', '')}")
-                st.markdown(f"**FIT:** {product_info.get('FIT', '')}")
-                st.markdown(f"**DETAIL:** {product_info.get('DETAIL', '')}")
-                st.markdown(f"**STYLE MOOD:** {product_info.get('STYLE MOOD', '')}")
-                st.markdown(f"**MODEL:** {product_info.get('MODEL', '')}")
-                st.markdown(f"**NOTES:** {product_info.get('NOTES', '')}")
+
+                erp_price = st.number_input("ERP PRICE", value=product_info.get("ERP PRICE", 0.0))
+                shein_price = st.number_input("SHEIN PRICE", value=product_img.get("SHEIN PRICE", 0.0) if product_img is not None else 0.0)
+                sleeve = st.text_input("SLEEVE", value=product_info.get("SLEEVE", ""))
+                neckline = st.text_input("NECKLINE", value=product_info.get("NECKLINE", ""))
+                length = st.text_input("LENGTH", value=product_info.get("LENGTH", ""))
+                fit = st.text_input("FIT", value=product_info.get("FIT", ""))
+                detail = st.text_input("DETAIL", value=product_info.get("DETAIL", ""))
+                style_mood = st.text_input("STYLE MOOD", value=product_info.get("STYLE MOOD", ""))
+                model = st.text_input("MODEL", value=product_info.get("MODEL", ""))
+                notes = st.text_area("NOTES", value=product_info.get("NOTES", ""))
 
             st.markdown("---")
             st.markdown("### 📏 Size Chart")
 
+            size_inputs = {}
             size_fields = {
                 "Top 1": ["TOP1_CHEST", "TOP1_LENGTH", "TOP1_SLEEVE"],
                 "Top 2": ["TOP2_CHEST", "TOP2_LENGTH", "TOP2_SLEEVE"],
@@ -77,14 +80,25 @@ elif page == "🔍 스타일 정보 조회":
             }
 
             for section, fields in size_fields.items():
-                size_data = []
+                st.markdown(f"**{section}**")
                 for field in fields:
-                    if field in product_info and pd.notna(product_info[field]):
-                        label = field.split("_")[1].capitalize()
-                        size_data.append((label, product_info[field]))
-                if size_data:
-                    st.markdown(f"**{section}**")
-                    st.table(pd.DataFrame(size_data, columns=["Measurement", "cm"]))
+                    default_val = product_info.get(field, 0.0)
+                    size_inputs[field] = st.number_input(field.replace("_", " "), value=float(default_val) if pd.notna(default_val) else 0.0)
+
+            if st.button("💾 수정 저장"):
+                df_info.at[selected_index, "ERP PRICE"] = erp_price
+                df_info.at[selected_index, "SLEEVE"] = sleeve
+                df_info.at[selected_index, "NECKLINE"] = neckline
+                df_info.at[selected_index, "LENGTH"] = length
+                df_info.at[selected_index, "FIT"] = fit
+                df_info.at[selected_index, "DETAIL"] = detail
+                df_info.at[selected_index, "STYLE MOOD"] = style_mood
+                df_info.at[selected_index, "MODEL"] = model
+                df_info.at[selected_index, "NOTES"] = notes
+                for field, val in size_inputs.items():
+                    df_info.at[selected_index, field] = val
+                df_info.to_csv(INFO_CSV, index=False)
+                st.success("✅ 수정 사항이 저장되었습니다.")
         else:
             st.warning("❌ 해당 스타일을 찾을 수 없습니다.")
 

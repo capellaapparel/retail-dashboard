@@ -126,6 +126,37 @@ with st.form("add_style"):
     model = st.multiselect("MODEL", ["Latina", "Black", "Caucasian", "Plus", "Asian"])
     notes = st.text_area("NOTES")
 
+    # --- 사이즈차트 입력 ---
+    st.markdown("### 📏 사이즈 차트 입력")
+    st.markdown("**TOP 1**")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        top1_chest = st.number_input("Top1 Chest", key="f_top1_chest")
+    with col2:
+        top1_length = st.number_input("Top1 Length", key="f_top1_length")
+    with col3:
+        top1_sleeve = st.number_input("Top1 Sleeve Length", key="f_top1_sleeve")
+
+    st.markdown("**TOP 2**")
+    col4, col5, col6 = st.columns(3)
+    with col4:
+        top2_chest = st.number_input("Top2 Chest", key="f_top2_chest")
+    with col5:
+        top2_length = st.number_input("Top2 Length", key="f_top2_length")
+    with col6:
+        top2_sleeve = st.number_input("Top2 Sleeve Length", key="f_top2_sleeve")
+
+    st.markdown("**BOTTOM**")
+    col7, col8, col9, col10 = st.columns(4)
+    with col7:
+        bottom_waist = st.number_input("Bottom Waist", key="f_bottom_waist")
+    with col8:
+        bottom_hip = st.number_input("Bottom Hip", key="f_bottom_hip")
+    with col9:
+        bottom_length = st.number_input("Bottom Length", key="f_bottom_length")
+    with col10:
+        bottom_inseam = st.number_input("Bottom Inseam", key="f_bottom_inseam")
+
     submitted = st.form_submit_button("추가하기")
     if submitted:
         st.success("새 스타일이 등록되었습니다! (저장은 CSV 수동처리 필요)")

@@ -192,10 +192,10 @@ elif page == "📊 세일즈 데이터 분석 (Shein)":
 
     df_info["권장 가격"] = df_info.apply(lambda row: suggest_price(row["ERP PRICE"], row["SHEIN PRICE"], row["판매 건수"]), axis=1)
 
-    st.markdown("### ⬇️ 가격 인하 제안")
-    lower_table = df_info[df_info["판매 건수"] <= 2][["Product Number", "판매 건수", "ERP PRICE", "SHEIN PRICE", "권장 가격"]]
+   st.markdown("### ⬇️ 가격 인하 제안")
+    lower_table = df_info[df_info["판매 건수"] <= 2].sort_values("판매 건수")[["Product Number", "판매 건수", "ERP PRICE", "SHEIN PRICE", "권장 가격"]]
     st.dataframe(lower_table.style.apply(lambda r: ["background-color: #ffe6e6"]*len(r), axis=1), use_container_width=True)
 
     st.markdown("### ⬆️ 가격 인상 제안")
-    raise_table = df_info[df_info["판매 건수"] >= 20][["Product Number", "판매 건수", "ERP PRICE", "SHEIN PRICE", "권장 가격"]]
+    raise_table = df_info[df_info["판매 건수"] >= 20].sort_values("판매 건수", ascending=False)[["Product Number", "판매 건수", "ERP PRICE", "SHEIN PRICE", "권장 가격"]]
     st.dataframe(raise_table.style.apply(lambda r: ["background-color: #e6ffe6"]*len(r), axis=1), use_container_width=True)

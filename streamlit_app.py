@@ -35,7 +35,7 @@ def load_images():
 
 # --- 스타일 정보 조회 페이지 ---
 if page == "📖 스타일 정보 조회":
-    st.title("📖 스타일 정보 (읽기 전용)")
+    st.title("📖 스타일 정보")
     try:
         df_info = load_google_sheet("Sheet1")
         df_img = load_images()

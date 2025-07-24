@@ -7,16 +7,15 @@ from datetime import datetime
 
 # --- Google Sheet URL & Settings ---
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
-SHEET_NAME = "Sheet1"
 IMAGE_CSV = "product_images.csv"
 
 st.set_page_config(page_title="Capella Product Dashboard", layout="wide")
 
 # Sidebar Navigation
-page = st.sidebar.radio("페이지 선택", ["📖 스타일 정보 조회", "📊 세일즈 데이터 분석"])
+page = st.sidebar.radio("페이지 선택", ["📖 스타일 정보 조회", "📊 세일즈 데이터 분석 (Shein)"])
 
 @st.cache_data(show_spinner=False)
-def load_google_sheet():
+def load_google_sheet(sheet_name):
     scope = [
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive"
@@ -26,7 +25,7 @@ def load_google_sheet():
         json.dump(json_data, f)
     creds = ServiceAccountCredentials.from_json_keyfile_name("/tmp/service_account.json", scope)
     client = gspread.authorize(creds)
-    sheet = client.open_by_url(GOOGLE_SHEET_URL).worksheet(SHEET_NAME)
+    sheet = client.open_by_url(GOOGLE_SHEET_URL).worksheet(sheet_name)
     data = sheet.get_all_records()
     return pd.DataFrame(data)
 
@@ -38,7 +37,7 @@ def load_images():
 if page == "📖 스타일 정보 조회":
     st.title("📖 스타일 정보 (읽기 전용)")
     try:
-        df_info = load_google_sheet()
+        df_info = load_google_sheet("Sheet1")
         df_img = load_images()
     except Exception as e:
         st.error("❌ 데이터 로드 실패: " + str(e))
@@ -134,15 +133,18 @@ if page == "📖 스타일 정보 조회":
                 st.caption("사이즈 정보가 없습니다.")
 
 # --- 세일즈 분석 페이지 ---
-elif page == "📊 세일즈 데이터 분석":
-    st.title("📊 세일즈 분석 대시보드")
+elif page == "📊 세일즈 데이터 분석 (Shein)":
+    st.title("📊 Shein 세일즈 분석 대시보드")
 
-    uploaded_file = st.file_uploader("📤 세일즈 데이터 업로드 (Excel)", type=["xlsx"])
+    try:
+        df = load_google_sheet("Sheet2")
+    except Exception as e:
+        st.error("❌ Shein 데이터 로드 실패: " + str(e))
+        st.stop()
 
-    if uploaded_file:
-        df = pd.read_excel(uploaded_file)
-
-        # Rename for simplicity
+    if df.empty:
+        st.warning("데이터가 없습니다.")
+    else:
         df.columns = df.columns.str.strip()
         df["Order Date"] = pd.to_datetime(df["Order basic information.24"], errors='coerce')
         df["Style"] = df["Order basic information.9"].str.extract(r'(\b[A-Z0-9]{4,}\b)', expand=False)

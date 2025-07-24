@@ -162,11 +162,14 @@ elif page == "📊 세일즈 데이터 분석 (Shein)":
 
     st.markdown("### 💡 가격 전략 제안")
 
-    def suggest_price(erp, sales_count):
-        if pd.isna(erp): return "-"
-        if sales_count == 0: return round(erp + 3, 2)
-        elif sales_count <= 2: return round(erp + 4.5, 2)
-        else: return ""
+   def suggest_price(erp, current_price, sales_count):
+    if pd.isna(erp): return "-"
+    if sales_count == 0:
+        return min(erp + 3, current_price) if current_price else round(erp + 3, 2)
+    elif sales_count <= 2:
+        return min(erp + 4.5, current_price) if current_price else round(erp + 4.5, 2)
+    return "-"
+
 
     sales_counts = df_sales["Style"].value_counts().to_dict()
     df_info["판매 건수"] = df_info["Product Number"].astype(str).map(sales_counts).fillna(0).astype(int)

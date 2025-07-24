@@ -83,22 +83,36 @@ if style_input:
         st.markdown("---")
         st.subheader("📏 Size Chart")
 
-        # New layout format
-        st.markdown("**Top 1**")
-        col_top1 = st.columns(3)
-        col_top1[0].markdown(f"Chest: {row.get('TOP1_CHEST', '')}")
-        col_top1[1].markdown(f"Length: {row.get('TOP1_LENGTH', '')}")
-        col_top1[2].markdown(f"Sleeve: {row.get('TOP1_SLEEVE', '')}")
-
-        st.markdown("**Top 2**")
-        col_top2 = st.columns(3)
-        col_top2[0].markdown(f"Chest: {row.get('TOP2_CHEST', '')}")
-        col_top2[1].markdown(f"Length: {row.get('TOP2_LENGTH', '')}")
-        col_top2[2].markdown(f"Sleeve: {row.get('TOP2_SLEEVE', '')}")
-
-        st.markdown("**Bottom**")
-        col_bottom = st.columns(4)
-        col_bottom[0].markdown(f"Waist: {row.get('BOTTOM_WAIST', '')}")
-        col_bottom[1].markdown(f"Hip: {row.get('BOTTOM_HIP', '')}")
-        col_bottom[2].markdown(f"Length: {row.get('BOTTOM_LENGTH', '')}")
-        col_bottom[3].markdown(f"Inseam: {row.get('BOTTOM_INSEAM', '')}")
+        st.markdown("""
+        <table style='width:100%; text-align:center; border-collapse:collapse' border='1'>
+            <tr>
+                <th colspan='3'>Top 1</th>
+            </tr>
+            <tr>
+                <td>Chest: {0}</td>
+                <td>Length: {1}</td>
+                <td>Sleeve: {2}</td>
+            </tr>
+            <tr>
+                <th colspan='3'>Top 2</th>
+            </tr>
+            <tr>
+                <td>Chest: {3}</td>
+                <td>Length: {4}</td>
+                <td>Sleeve: {5}</td>
+            </tr>
+            <tr>
+                <th colspan='4'>Bottom</th>
+            </tr>
+            <tr>
+                <td>Waist: {6}</td>
+                <td>Hip: {7}</td>
+                <td>Length: {8}</td>
+                <td>Inseam: {9}</td>
+            </tr>
+        </table>
+        """.format(
+            row.get("TOP1_CHEST", ""), row.get("TOP1_LENGTH", ""), row.get("TOP1_SLEEVE", ""),
+            row.get("TOP2_CHEST", ""), row.get("TOP2_LENGTH", ""), row.get("TOP2_SLEEVE", ""),
+            row.get("BOTTOM_WAIST", ""), row.get("BOTTOM_HIP", ""), row.get("BOTTOM_LENGTH", ""), row.get("BOTTOM_INSEAM", "")
+        ), unsafe_allow_html=True)

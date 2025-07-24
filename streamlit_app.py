@@ -171,7 +171,9 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
     # --- 전체 요약 그래프 ---
     st.markdown("### 📈 판매 추이 요약")
     sales_by_date = df_sales_filtered.groupby("Order Date").size().reset_index(name="Orders")
-    st.line_chart(sales_by_date.set_index("Order Date"))
+    sales_by_date["Order Date"] = pd.to_datetime(sales_by_date["Order Date"])
+sales_by_date = sales_by_date.set_index("Order Date").sort_index()
+st.line_chart(sales_by_date)
 
     # --- 판매 건수 및 최신 가격 집계 ---
     sales_summary = df_sales_filtered.groupby("Product Description").agg({

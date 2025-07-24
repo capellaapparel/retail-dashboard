@@ -157,25 +157,18 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
     df_sales["Order Date"] = pd.to_datetime(df_sales["Order Processed On"], errors="coerce")
     df_sales = df_sales.dropna(subset=["Order Date"])
 
-# --- 날짜 필터 ---
-min_date, max_date = df_sales["Order Date"].min(), df_sales["Order Date"].max()
-date_range = st.date_input("📅 날짜 범위 선택", [min_date, max_date], format="YYYY-MM-DD")
+    # --- 날짜 필터 ---
+    min_date, max_date = df_sales["Order Date"].min(), df_sales["Order Date"].max()
+    date_range = st.date_input("📅 날짜 범위 선택", [min_date, max_date], format="YYYY-MM-DD")
 
-show_results = False
-df_sales_filtered = pd.DataFrame()
+    show_results = False
+    df_sales_filtered = pd.DataFrame()
 
-if isinstance(date_range, list) and len(date_range) == 2:
-    start = pd.to_datetime(date_range[0]).normalize()
-    end = pd.to_datetime(date_range[1]).normalize() + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-    df_sales_filtered = df_sales[(df_sales["Order Date"] >= start) & (df_sales["Order Date"] <= end)]
-    show_results = not df_sales_filtered.empty
-    else:
-    if df_sales.empty:
-        st.info("❌ 전체 데이터가 비어 있습니다.")
-    elif df_sales_filtered.empty:
-        st.info("선택된 날짜 범위에 해당하는 데이터가 없습니다.")
-    else:
-        st.info("날짜 범위를 먼저 선택하세요.")
+    if isinstance(date_range, list) and len(date_range) == 2:
+        start = pd.to_datetime(date_range[0]).normalize()
+        end = pd.to_datetime(date_range[1]).normalize() + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+        df_sales_filtered = df_sales[(df_sales["Order Date"] >= start) & (df_sales["Order Date"] <= end)]
+        show_results = not df_sales_filtered.empty
 
     if show_results:
         # --- 전체 요약 그래프 ---
@@ -232,4 +225,9 @@ if isinstance(date_range, list) and len(date_range) == 2:
         except KeyError as ke:
             st.warning(f"⚠️ 데이터 누락으로 인상 제안 테이블 생성 불가: {ke}")
     else:
-        st.info("날짜 범위를 먼저 선택하세요. 선택된 날짜에 데이터가 있을 경우 결과가 표시됩니다.")
+        if df_sales.empty:
+            st.info("❌ 전체 데이터가 비어 있습니다.")
+        elif df_sales_filtered.empty:
+            st.info("선택된 날짜 범위에 해당하는 데이터가 없습니다.")
+        else:
+            st.info("날짜 범위를 먼저 선택하세요.")

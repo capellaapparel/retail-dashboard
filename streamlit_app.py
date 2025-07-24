@@ -144,12 +144,52 @@ if page == "📖 스타일 정보 조회":
 
 # --- 세일즈 데이터 분석 페이지 ---
 elif page == "📊 세일즈 데이터 분석 (Shein)":
-    # ... (기존 코드 유지)
+    try:
+        df_info = load_google_sheet("Sheet1")
+        df_sales = load_google_sheet("Sheet2")
+        df_info["ERP PRICE"] = pd.to_numeric(df_info["ERP PRICE"], errors="coerce")
+    except Exception as e:
+        st.error("❌ 데이터 로드 실패: " + str(e))
+        st.stop()
 
+    df_sales.columns = df_sales.columns.str.strip()
+    df_sales["Order Date"] = pd.to_datetime(df_sales["Order Processed On"], errors="coerce")
+    df_sales = df_sales.dropna(subset=["Order Date"])
+
+    # --- 날짜 필터 ---
+    min_date, max_date = df_sales["Order Date"].min(), df_sales["Order Date"].max()
+    date_range = st.date_input("📅 날짜 범위 선택", [min_date, max_date], format="YYYY-MM-DD")
+
+    if isinstance(date_range, list) and len(date_range) == 2:
+        start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+        df_sales = df_sales[(df_sales["Order Date"] >= start) & (df_sales["Order Date"] <= end)]
+
+    # --- 스타일별 판매 건수 ---
+    sales_summary = df_sales.groupby("Product Description").size().reset_index(name="판매 건수")
+    df_info = df_info.merge(sales_summary, how="left", left_on="Product Number", right_on="Product Description")
+    df_info["판매 건수"] = df_info["판매 건수"].fillna(0).astype(int)
+
+    # --- 권장 가격 계산 ---
+    def recommend_price(row):
+        if row["판매 건수"] == 0:
+            return min(row["ERP PRICE"] + 3, row.get("SHEIN PRICE", 0) or 999)
+        elif row["판매 건수"] >= 20:
+            return row["ERP PRICE"] + 7
+        else:
+            return row.get("SHEIN PRICE", 0) or row["ERP PRICE"] + 5
+
+    df_info["권장 가격"] = df_info.apply(recommend_price, axis=1)
+
+    # --- 가격 인하 제안 ---
     st.markdown("### ⬇️ 가격 인하 제안")
-    lower_table = df_info[df_info["판매 건수"] <= 2].sort_values("판매 건수")[["Product Number", "판매 건수", "ERP PRICE", "SHEIN PRICE", "권장 가격"]]
-    st.dataframe(lower_table.style.apply(lambda r: ["background-color: #ffe6e6"]*len(r), axis=1), use_container_width=True)
+    lower_table = df_info[df_info["판매 건수"] <= 2].sort_values("판매 건수")[
+        ["Product Number", "판매 건수", "ERP PRICE", "SHEIN PRICE", "권장 가격"]]
+    st.dataframe(lower_table.style.apply(lambda r: ["background-color: #ffe6e6"] * len(r), axis=1),
+                 use_container_width=True)
 
+    # --- 가격 인상 제안 ---
     st.markdown("### ⬆️ 가격 인상 제안")
-    raise_table = df_info[df_info["판매 건수"] >= 20].sort_values("판매 건수", ascending=False)[["Product Number", "판매 건수", "ERP PRICE", "SHEIN PRICE", "권장 가격"]]
-    st.dataframe(raise_table.style.apply(lambda r: ["background-color: #e6ffe6"]*len(r), axis=1), use_container_width=True)
+    raise_table = df_info[df_info["판매 건수"] >= 20].sort_values("판매 건수", ascending=False)[
+        ["Product Number", "판매 건수", "ERP PRICE", "SHEIN PRICE", "권장 가격"]]
+    st.dataframe(raise_table.style.apply(lambda r: ["background-color: #e6ffe6"] * len(r), axis=1),
+                 use_container_width=True)

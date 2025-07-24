@@ -145,7 +145,6 @@ if page == "📖 스타일 정보 조회":
 
 
 
-# --- 세일즈 데이터 분석 페이지 ---
 if page == "📊 세일즈 데이터 분석 (Shein)":
     try:
         df_info = load_google_sheet("Sheet1")
@@ -165,15 +164,17 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
 
     if isinstance(date_range, list) and len(date_range) == 2:
         start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
-        df_sales = df_sales[(df_sales["Order Date"] >= start) & (df_sales["Order Date"] <= end)]
+        df_sales_filtered = df_sales[(df_sales["Order Date"] >= start) & (df_sales["Order Date"] <= end)]
+    else:
+        df_sales_filtered = df_sales.copy()
 
     # --- 전체 요약 그래프 ---
     st.markdown("### 📈 판매 추이 요약")
-    sales_by_date = df_sales.groupby("Order Date").size().reset_index(name="Orders")
+    sales_by_date = df_sales_filtered.groupby("Order Date").size().reset_index(name="Orders")
     st.line_chart(sales_by_date.set_index("Order Date"))
 
     # --- 판매 건수 및 최신 가격 집계 ---
-    sales_summary = df_sales.groupby("Product Description").agg({
+    sales_summary = df_sales_filtered.groupby("Product Description").agg({
         "Order Date": "count",
         "Product Price": lambda x: x.iloc[-1]
     }).reset_index().rename(columns={"Order Date": "판매 건수", "Product Price": "SHEIN PRICE"})

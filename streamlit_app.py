@@ -83,36 +83,47 @@ if style_input:
         st.markdown("---")
         st.subheader("📏 Size Chart")
 
-        st.markdown("""
-        <table style='width:100%; text-align:center; border-collapse:collapse' border='1'>
-            <tr>
-                <th colspan='3'>Top 1</th>
-            </tr>
-            <tr>
-                <td>Chest: {0}</td>
-                <td>Length: {1}</td>
-                <td>Sleeve: {2}</td>
-            </tr>
-            <tr>
-                <th colspan='3'>Top 2</th>
-            </tr>
-            <tr>
-                <td>Chest: {3}</td>
-                <td>Length: {4}</td>
-                <td>Sleeve: {5}</td>
-            </tr>
-            <tr>
-                <th colspan='4'>Bottom</th>
-            </tr>
-            <tr>
-                <td>Waist: {6}</td>
-                <td>Hip: {7}</td>
-                <td>Length: {8}</td>
-                <td>Inseam: {9}</td>
-            </tr>
-        </table>
-        """.format(
-            row.get("TOP1_CHEST", ""), row.get("TOP1_LENGTH", ""), row.get("TOP1_SLEEVE", ""),
-            row.get("TOP2_CHEST", ""), row.get("TOP2_LENGTH", ""), row.get("TOP2_SLEEVE", ""),
-            row.get("BOTTOM_WAIST", ""), row.get("BOTTOM_HIP", ""), row.get("BOTTOM_LENGTH", ""), row.get("BOTTOM_INSEAM", "")
-        ), unsafe_allow_html=True)
+        def has_size_data(*args):
+            return any(str(v).strip() not in ["", "0", "0.0"] for v in args)
+
+        top1_vals = (row.get("TOP1_CHEST", ""), row.get("TOP1_LENGTH", ""), row.get("TOP1_SLEEVE", ""))
+        top2_vals = (row.get("TOP2_CHEST", ""), row.get("TOP2_LENGTH", ""), row.get("TOP2_SLEEVE", ""))
+        bottom_vals = (row.get("BOTTOM_WAIST", ""), row.get("BOTTOM_HIP", ""), row.get("BOTTOM_LENGTH", ""), row.get("BOTTOM_INSEAM", ""))
+
+        html_parts = []
+
+        if has_size_data(*top1_vals):
+            html_parts.append(f"""
+            <table style='width:60%; text-align:center; border-collapse:collapse; margin-bottom:10px' border='1'>
+                <tr><th colspan='2'>Top 1</th></tr>
+                <tr><td>Chest</td><td>{top1_vals[0]}</td></tr>
+                <tr><td>Length</td><td>{top1_vals[1]}</td></tr>
+                <tr><td>Sleeve</td><td>{top1_vals[2]}</td></tr>
+            </table>
+            """)
+
+        if has_size_data(*top2_vals):
+            html_parts.append(f"""
+            <table style='width:60%; text-align:center; border-collapse:collapse; margin-bottom:10px' border='1'>
+                <tr><th colspan='2'>Top 2</th></tr>
+                <tr><td>Chest</td><td>{top2_vals[0]}</td></tr>
+                <tr><td>Length</td><td>{top2_vals[1]}</td></tr>
+                <tr><td>Sleeve</td><td>{top2_vals[2]}</td></tr>
+            </table>
+            """)
+
+        if has_size_data(*bottom_vals):
+            html_parts.append(f"""
+            <table style='width:80%; text-align:center; border-collapse:collapse' border='1'>
+                <tr><th colspan='2'>Bottom</th></tr>
+                <tr><td>Waist</td><td>{bottom_vals[0]}</td></tr>
+                <tr><td>Hip</td><td>{bottom_vals[1]}</td></tr>
+                <tr><td>Length</td><td>{bottom_vals[2]}</td></tr>
+                <tr><td>Inseam</td><td>{bottom_vals[3]}</td></tr>
+            </table>
+            """)
+
+        if html_parts:
+            st.markdown("".join(html_parts), unsafe_allow_html=True)
+        else:
+            st.caption("사이즈 정보가 없습니다.")

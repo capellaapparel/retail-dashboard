@@ -146,7 +146,7 @@ if page == "📖 스타일 정보 조회":
 
 
 # --- 세일즈 데이터 분석 페이지 ---
-elif page == "📊 세일즈 데이터 분석 (Shein)":
+if page == "📊 세일즈 데이터 분석 (Shein)":
     try:
         df_info = load_google_sheet("Sheet1")
         df_sales = load_google_sheet("Sheet2")

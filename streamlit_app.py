@@ -19,7 +19,6 @@ def load_google_sheet():
         "https://www.googleapis.com/auth/drive"
     ]
 
-    # ✅ SecretValue 처리해서 JSON 변환 가능하게
     json_data = {k: str(v) for k, v in st.secrets["gcp_service_account"].items()}
 
     with open("/tmp/service_account.json", "w") as f:
@@ -83,15 +82,23 @@ if style_input:
 
         st.markdown("---")
         st.subheader("📏 Size Chart")
-        st.markdown("""
-        | Top 1        | Top 2        | Bottom                         |
-        |--------------|--------------|--------------------------------|
-        | Chest: {0}   | Chest: {3}   | Waist: {6}                    |
-        | Length: {1}  | Length: {4}  | Hip: {7}                      |
-        | Sleeve: {2}  | Sleeve: {5}  | Length: {8} / Inseam: {9}     |
-        """.format(
-            row.get("TOP1_CHEST", ""), row.get("TOP1_LENGTH", ""), row.get("TOP1_SLEEVE", ""),
-            row.get("TOP2_CHEST", ""), row.get("TOP2_LENGTH", ""), row.get("TOP2_SLEEVE", ""),
-            row.get("BOTTOM_WAIST", ""), row.get("BOTTOM_HIP", ""),
-            row.get("BOTTOM_LENGTH", ""), row.get("BOTTOM_INSEAM", "")
-        ))
+
+        # New layout format
+        st.markdown("**Top 1**")
+        col_top1 = st.columns(3)
+        col_top1[0].markdown(f"Chest: {row.get('TOP1_CHEST', '')}")
+        col_top1[1].markdown(f"Length: {row.get('TOP1_LENGTH', '')}")
+        col_top1[2].markdown(f"Sleeve: {row.get('TOP1_SLEEVE', '')}")
+
+        st.markdown("**Top 2**")
+        col_top2 = st.columns(3)
+        col_top2[0].markdown(f"Chest: {row.get('TOP2_CHEST', '')}")
+        col_top2[1].markdown(f"Length: {row.get('TOP2_LENGTH', '')}")
+        col_top2[2].markdown(f"Sleeve: {row.get('TOP2_SLEEVE', '')}")
+
+        st.markdown("**Bottom**")
+        col_bottom = st.columns(4)
+        col_bottom[0].markdown(f"Waist: {row.get('BOTTOM_WAIST', '')}")
+        col_bottom[1].markdown(f"Hip: {row.get('BOTTOM_HIP', '')}")
+        col_bottom[2].markdown(f"Length: {row.get('BOTTOM_LENGTH', '')}")
+        col_bottom[3].markdown(f"Inseam: {row.get('BOTTOM_INSEAM', '')}")

@@ -152,7 +152,7 @@ elif page == "📊 세일즈 데이터 분석 (Shein)":
         st.stop()
 
     df_sales.columns = df_sales.columns.str.strip()
-    df_sales["Order Date"] = pd.to_datetime(df_sales["Order basic information.24"], errors="coerce")
+    df_sales["Order Date"] = pd.to_datetime(df_sales["Order Processed On"], errors="coerce")
     df_sales["Style"] = df_sales["Product Description"].astype(str)
     df_sales["Price"] = pd.to_numeric(df_sales["Product Price"], errors="coerce")
 

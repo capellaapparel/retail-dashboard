@@ -1,89 +1,97 @@
 import streamlit as st
+import pandas as pd
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import pandas as pd
 
-# --- 설정값
+# --- Google Sheet URL & Settings ---
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
+SHEET_NAME = "Sheet1"
 IMAGE_CSV = "product_images.csv"
 
-# --- Google Sheets 로드 함수
-@st.cache_data
-def load_sheet():
-    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    
-    # Streamlit Secrets에서 서비스 계정 정보 받아와 임시 저장
+st.set_page_config(page_title="Capella Product Viewer", layout="wide")
+st.title("📖 스타일 정보 (읽기 전용)")
+
+@st.cache_data(show_spinner=False)
+def load_google_sheet():
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+
+    # ✅ SecretValue 처리해서 JSON 변환 가능하게
     json_data = {k: str(v) for k, v in st.secrets["gcp_service_account"].items()}
+
     with open("/tmp/service_account.json", "w") as f:
         json.dump(json_data, f)
 
     creds = ServiceAccountCredentials.from_json_keyfile_name("/tmp/service_account.json", scope)
     client = gspread.authorize(creds)
-    sheet = client.open_by_url(GOOGLE_SHEET_URL).worksheet("Sheet1")
+    sheet = client.open_by_url(GOOGLE_SHEET_URL).worksheet(SHEET_NAME)
     data = sheet.get_all_records()
     return pd.DataFrame(data)
 
-# --- 이미지 CSV 로드
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_images():
-    try:
-        return pd.read_csv(IMAGE_CSV)
-    except FileNotFoundError:
-        return pd.DataFrame()
+    return pd.read_csv(IMAGE_CSV)
 
-# --- Streamlit 페이지 설정
-st.set_page_config(page_title="Capella Product Viewer", layout="wide")
-st.title("📖 Capella 제품 정보 (Google Sheets 기반 조회 전용)")
+# --- Load Data ---
+try:
+    df_info = load_google_sheet()
+    df_img = load_images()
+except Exception as e:
+    st.error("❌ 데이터 로드 실패: " + str(e))
+    st.stop()
 
-df_info = load_sheet()
-df_img = load_images()
-
-# --- 검색 입력
-style_input = st.text_input("🔍 스타일 번호 검색:")
+# --- Style Number 검색 ---
+style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
 
 if style_input:
-    df_info["Product Number"] = df_info["Product Number"].astype(str)
-    matched = df_info[df_info["Product Number"].str.contains(style_input, case=False, na=False)]
+    matched = df_info[df_info["Product Number"].astype(str).str.contains(style_input, case=False, na=False)]
 
-    if not matched.empty:
-        selected = st.selectbox("스타일 선택", matched["Product Number"])
-        row = matched[matched["Product Number"] == selected].iloc[0]
+    if matched.empty:
+        st.warning("❌ 해당 스타일을 찾을 수 없습니다.")
+    else:
+        selected = st.selectbox("스타일 선택", matched["Product Number"].astype(str))
+        row = df_info[df_info["Product Number"] == selected].iloc[0]
+        img_row = df_img[df_img["Product Number"] == selected]
+        image_url = img_row.iloc[0]["First Image"] if not img_row.empty else None
 
         st.markdown("---")
         col1, col2 = st.columns([1, 2])
 
-        # --- 이미지 표시
         with col1:
-            img_row = df_img[df_img["Product Number"] == selected]
-            if not img_row.empty and pd.notna(img_row.iloc[0].get("First Image", "")):
-                st.image(img_row.iloc[0]["First Image"], width=280)
+            if image_url:
+                st.image(image_url, width=300)
             else:
-                st.markdown("_이미지 없음_")
+                st.caption("이미지 없음")
 
-        # --- 제품 기본 정보
         with col2:
-            for field in [
-                "Product Number", "ERP PRICE", "SLEEVE", "NECKLINE", "LENGTH",
-                "FIT", "DETAIL", "STYLE MOOD", "MODEL", "NOTES"
-            ]:
-                value = row.get(field, "")
-                st.markdown(f"**{field}:** {value}")
+            st.subheader(row.get("default product name(en)", ""))
+            st.markdown(f"**Product Number:** {row['Product Number']}")
+            st.markdown(f"**ERP PRICE:** {row.get('ERP PRICE', '')}")
+            st.markdown(f"**SHEIN PRICE:** (판매 데이터 기반 추후 반영)")
+            st.markdown(f"**TEMU PRICE:** (판매 데이터 기반 추후 반영)")
+            st.markdown(f"**SLEEVE:** {row.get('SLEEVE', '')}")
+            st.markdown(f"**NECKLINE:** {row.get('NECKLINE', '')}")
+            st.markdown(f"**LENGTH:** {row.get('LENGTH', '')}")
+            st.markdown(f"**FIT:** {row.get('FIT', '')}")
+            st.markdown(f"**DETAIL:** {row.get('DETAIL', '')}")
+            st.markdown(f"**STYLE MOOD:** {row.get('STYLE MOOD', '')}")
+            st.markdown(f"**MODEL:** {row.get('MODEL', '')}")
+            st.markdown(f"**NOTES:** {row.get('NOTES', '')}")
 
-        # --- 사이즈 차트
-        st.markdown("### 📏 Size Chart")
-        for section, fields in {
-            "Top 1": ["TOP1_CHEST", "TOP1_LENGTH", "TOP1_SLEEVE"],
-            "Top 2": ["TOP2_CHEST", "TOP2_LENGTH", "TOP2_SLEEVE"],
-            "Bottom": ["BOTTOM_WAIST", "BOTTOM_HIP", "BOTTOM_LENGTH", "BOTTOM_INSEAM"]
-        }.items():
-            st.markdown(f"**{section}**")
-            cols = st.columns(len(fields))
-            for col, field in zip(cols, fields):
-                with col:
-                    st.metric(label=field, value=row.get(field, "—"))
-
-    else:
-        st.warning("❌ 일치하는 스타일 없음")
-else:
-    st.info("좌측 상단에서 스타일 번호를 검색하세요.")
+        st.markdown("---")
+        st.subheader("📏 Size Chart")
+        st.markdown("""
+        | Top 1        | Top 2        | Bottom                         |
+        |--------------|--------------|--------------------------------|
+        | Chest: {0}   | Chest: {3}   | Waist: {6}                    |
+        | Length: {1}  | Length: {4}  | Hip: {7}                      |
+        | Sleeve: {2}  | Sleeve: {5}  | Length: {8} / Inseam: {9}     |
+        """.format(
+            row.get("TOP1_CHEST", ""), row.get("TOP1_LENGTH", ""), row.get("TOP1_SLEEVE", ""),
+            row.get("TOP2_CHEST", ""), row.get("TOP2_LENGTH", ""), row.get("TOP2_SLEEVE", ""),
+            row.get("BOTTOM_WAIST", ""), row.get("BOTTOM_HIP", ""),
+            row.get("BOTTOM_LENGTH", ""), row.get("BOTTOM_INSEAM", "")
+        ))

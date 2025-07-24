@@ -3,8 +3,6 @@ import pandas as pd
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import matplotlib.pyplot as plt
-import seaborn as sns
 from datetime import datetime
 
 # --- Google Sheet URL & Settings ---

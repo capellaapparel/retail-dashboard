@@ -191,4 +191,26 @@ if not low_sales.empty:
 else:
     st.caption("판매 저조 제품이 없습니다.")
 
+def suggest_price(erp, sales_count):
+    if pd.isna(erp):
+        return "-"
+    if sales_count == 0:
+        return round(erp + 3, 2)
+    elif sales_count <= 2:
+        return round(erp + 4.5, 2)
+    else:
+        return round(erp + 6.5, 2)
+
+# 모든 스타일별 판매 수
+sales_counts = df_sales["Style"].value_counts().to_dict()
+df_info["판매 건수"] = df_info["Product Number"].astype(str).map(sales_counts).fillna(0).astype(int)
+df_info["ERP PRICE"] = pd.to_numeric(df_info["ERP PRICE"], errors="coerce")
+
+df_info["💡 권장 Shein 가격"] = df_info.apply(lambda row: suggest_price(row["ERP PRICE"], row["판매 건수"]), axis=1)
+
+# 결과 보여주기
+st.subheader("📌 스타일별 권장 가격")
+st.write(df_info[["Product Number", "ERP PRICE", "판매 건수", "💡 권장 Shein 가격"]])
+
+
 

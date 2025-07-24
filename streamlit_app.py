@@ -73,7 +73,7 @@ if page == "📖 스타일 정보 조회":
                 st.markdown(f"**ERP PRICE:** {row.get('ERP PRICE', '')}")
 
                 df_sales.columns = df_sales.columns.str.strip()
-                df_sales["Order Date"] = pd.to_datetime(df_sales["Order basic information.24"], errors="coerce")
+                df_sales["Order Date"] = pd.to_datetime(df_sales["Order Processed On"], errors="coerce")
                 df_sales["Style"] = df_sales["Product Description"].astype(str)
                 df_sales["Price"] = pd.to_numeric(df_sales["Product Price"], errors="coerce")
                 df_filtered = df_sales[df_sales["Style"] == selected].dropna(subset=["Order Date"])

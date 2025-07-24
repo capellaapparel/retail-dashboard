@@ -172,14 +172,19 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
     sales_by_date = df_sales.groupby("Order Date").size().reset_index(name="Orders")
     st.line_chart(sales_by_date.set_index("Order Date"))
 
-    # --- 스타일별 판매 건수 및 최신 가격 ---
-    sales_summary = df_sales.groupby("Product Description").agg({
-        "Order Date": "count",
-        "Product Price": lambda x: x.iloc[-1]  # 가장 최근 가격
-    }).reset_index().rename(columns={"Order Date": "판매 건수", "Product Price": "SHEIN PRICE"})
+ # 판매 건수 및 최신 가격 집계
+sales_summary = df_sales.groupby("Product Description").agg({
+    "Order Date": "count",
+    "Product Price": lambda x: x.iloc[-1]  # 가장 최근 가격
+}).reset_index().rename(columns={"Order Date": "판매 건수", "Product Price": "SHEIN PRICE"})
 
-    df_info = df_info.merge(sales_summary, how="left", left_on="Product Number", right_on="Product Description")
-    df_info["판매 건수"] = df_info["판매 건수"].fillna(0).astype(int)
+# 병합
+df_info = df_info.merge(sales_summary, how="left", left_on="Product Number", right_on="Product Description")
+
+# 보정: 컬럼 보장
+df_info["판매 건수"] = df_info["판매 건수"].fillna(0).astype(int)
+df_info["SHEIN PRICE"] = pd.to_numeric(df_info["SHEIN PRICE"], errors="coerce")
+df_info["권장 가격"] = pd.to_numeric(df_info["권장 가격"], errors="coerce")
 
     # --- 권장 가격 계산 ---
     def recommend_price(row):

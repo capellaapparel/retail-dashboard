@@ -43,9 +43,6 @@ if page == "📖 스타일 정보 조회":
         st.error("❌ 데이터 로드 실패: " + str(e))
         st.stop()
 
-    if st.button("🔄 최신 데이터 불러오기"):
-        st.cache_data.clear()
-        st.experimental_rerun()
 
     style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
 
@@ -98,7 +95,7 @@ if page == "📖 스타일 정보 조회":
 
             if has_size_data(*top1_vals):
                 html_parts.append(f"""
-                <table style='width:60%; text-align:center; border-collapse:collapse; margin-bottom:10px' border='1'>
+                <table style='width:80%; text-align:center; border-collapse:collapse; margin-bottom:10px' border='1'>
                     <tr><th colspan='2'>Top 1</th></tr>
                     <tr><td>Chest</td><td>{top1_vals[0]}</td></tr>
                     <tr><td>Length</td><td>{top1_vals[1]}</td></tr>
@@ -108,7 +105,7 @@ if page == "📖 스타일 정보 조회":
 
             if has_size_data(*top2_vals):
                 html_parts.append(f"""
-                <table style='width:60%; text-align:center; border-collapse:collapse; margin-bottom:10px' border='1'>
+                <table style='width:80%; text-align:center; border-collapse:collapse; margin-bottom:10px' border='1'>
                     <tr><th colspan='2'>Top 2</th></tr>
                     <tr><td>Chest</td><td>{top2_vals[0]}</td></tr>
                     <tr><td>Length</td><td>{top2_vals[1]}</td></tr>

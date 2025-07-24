@@ -146,6 +146,7 @@ if page == "📖 스타일 정보 조회":
 elif page == "📊 세일즈 데이터 분석 (Shein)":
     st.title("📊 Shein 세일즈 데이터 분석")
     try:
+        df_info = load_google_sheet("Sheet1")  # 스타일 정보 시트 불러오기
         df_sales = load_google_sheet("Sheet2")
     except Exception as e:
         st.error("❌ 데이터 로드 실패: " + str(e))

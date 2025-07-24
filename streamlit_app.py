@@ -165,3 +165,29 @@ elif page == "📊 세일즈 데이터 분석 (Shein)":
     df_daily = df_sales.groupby("Order Date")["Price"].sum().reset_index()
     st.line_chart(df_daily.set_index("Order Date"))
 
+st.markdown("### 💡 가격 전략 제안")
+
+# 전체 스타일 목록
+all_styles = df_info["Product Number"].astype(str).unique()
+sold_styles = df_sales["Style"].dropna().unique()
+unsold_styles = set(all_styles) - set(sold_styles)
+
+# 판매 이력 없는 제품
+st.subheader("❌ 판매 없음 (가격 인하 추천)")
+if unsold_styles:
+    st.write(df_info[df_info["Product Number"].isin(unsold_styles)][["Product Number", "ERP PRICE"]])
+else:
+    st.caption("모든 제품에 판매 이력이 있습니다.")
+
+# 판매 건수별 집계
+style_summary = df_sales.groupby("Style")["Price"].agg(["count", "mean"]).reset_index()
+low_sales = style_summary[style_summary["count"] <= 2]
+
+st.subheader("⚠️ 판매 저조 (가격 재검토 권장)")
+if not low_sales.empty:
+    low_df = df_info[df_info["Product Number"].isin(low_sales["Style"])]
+    st.write(low_df[["Product Number", "ERP PRICE"]].merge(low_sales, left_on="Product Number", right_on="Style"))
+else:
+    st.caption("판매 저조 제품이 없습니다.")
+
+

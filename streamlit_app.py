@@ -14,7 +14,7 @@ def load_sheet():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     
     # Streamlit Secrets에서 서비스 계정 정보 받아와 임시 저장
-    json_data = st.secrets["gcp_service_account"]
+    json_data = dict["gcp_service_account"]
     with open("/tmp/service_account.json", "w") as f:
         json.dump(json_data, f)
 

@@ -140,3 +140,28 @@ if page == "📖 스타일 정보 조회":
                 st.markdown("".join(html_parts), unsafe_allow_html=True)
             else:
                 st.caption("사이즈 정보가 없습니다.")
+
+
+# --- 세일즈 데이터 분석 페이지 ---
+elif page == "📊 세일즈 데이터 분석 (Shein)":
+    st.title("📊 Shein 세일즈 데이터 분석")
+    try:
+        df_sales = load_google_sheet("Sheet2")
+    except Exception as e:
+        st.error("❌ 데이터 로드 실패: " + str(e))
+        st.stop()
+
+    df_sales.columns = df_sales.columns.str.strip()
+    df_sales["Order Date"] = pd.to_datetime(df_sales["Order processed on"], errors="coerce")
+    df_sales["Style"] = df_sales["Product Description"].astype(str)
+    df_sales["Price"] = pd.to_numeric(df_sales["Product Price"], errors="coerce")
+
+    st.markdown("### 🔢 요약 통계")
+    st.write(df_sales.groupby("Style")["Price"].agg(["count", "mean", "sum"]).rename(columns={
+        "count": "주문 수", "mean": "평균 가격", "sum": "총 매출"
+    }).sort_values("총 매출", ascending=False).head(20))
+
+    st.markdown("### 📅 날짜별 매출 추이")
+    df_daily = df_sales.groupby("Order Date")["Price"].sum().reset_index()
+    st.line_chart(df_daily.set_index("Order Date"))
+

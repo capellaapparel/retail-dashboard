@@ -4,6 +4,7 @@ import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
+from sklearn.cluster import KMeans
 
 # --- Google Sheet URL & Settings ---
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
@@ -162,22 +163,32 @@ elif page == "📊 세일즈 데이터 분석 (Shein)":
 
     st.markdown("### 💡 가격 전략 제안")
 
-   def suggest_price(erp, current_price, sales_count):
-    if pd.isna(erp): return "-"
-    if sales_count == 0:
-        return min(erp + 3, current_price) if current_price else round(erp + 3, 2)
-    elif sales_count <= 2:
-        return min(erp + 4.5, current_price) if current_price else round(erp + 4.5, 2)
-    return "-"
-
-
     sales_counts = df_sales["Style"].value_counts().to_dict()
     df_info["판매 건수"] = df_info["Product Number"].astype(str).map(sales_counts).fillna(0).astype(int)
     df_info["ERP PRICE"] = pd.to_numeric(df_info["ERP PRICE"], errors="coerce")
     shein_prices = df_sales.dropna(subset=["Order Date"])
     latest_price = shein_prices.sort_values("Order Date").drop_duplicates("Style", keep="last")[["Style", "Price"]].set_index("Style")["Price"]
     df_info["SHEIN PRICE"] = df_info["Product Number"].astype(str).map(latest_price)
-    df_info["권장 가격"] = df_info.apply(lambda row: suggest_price(row["ERP PRICE"], row["판매 건수"]), axis=1)
+
+    def suggest_price(erp, current_price, sales_count):
+        if pd.isna(erp): return "-"
+        if sales_count == 0:
+            return min(erp + 3, current_price) if current_price else round(erp + 3, 2)
+        elif sales_count <= 2:
+            return min(erp + 4.5, current_price) if current_price else round(erp + 4.5, 2)
+        return "-"
+
+    df_info["권장 가격"] = df_info.apply(lambda row: suggest_price(row["ERP PRICE"], row["SHEIN PRICE"], row["판매 건수"]), axis=1)
+
+    st.markdown("### 🤖 AI 유사 스타일 클러스터링")
+    try:
+        cluster_df = df_info.dropna(subset=["ERP PRICE", "판매 건수"])
+        X = cluster_df[["ERP PRICE", "판매 건수"]]
+        kmeans = KMeans(n_clusters=3, random_state=0).fit(X)
+        cluster_df["Cluster"] = kmeans.labels_
+        st.write(cluster_df[["Product Number", "ERP PRICE", "판매 건수", "Cluster"]])
+    except Exception as e:
+        st.warning("클러스터링 실패: " + str(e))
 
     styled_table = df_info[["Product Number", "판매 건수", "ERP PRICE", "SHEIN PRICE", "권장 가격"]]
     styled_table = styled_table.sort_values("판매 건수")

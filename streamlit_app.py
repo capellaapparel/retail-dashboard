@@ -170,10 +170,13 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
 
     # --- 전체 요약 그래프 ---
     st.markdown("### 📈 판매 추이 요약")
-    sales_by_date = df_sales_filtered.groupby("Order Date").size().reset_index(name="Orders")
-    sales_by_date["Order Date"] = pd.to_datetime(sales_by_date["Order Date"])
-    sales_by_date = sales_by_date.set_index("Order Date").sort_index()
-    st.line_chart(sales_by_date)
+    if not df_sales_filtered.empty:
+        sales_by_date = df_sales_filtered.groupby("Order Date").size().reset_index(name="Orders")
+        sales_by_date["Order Date"] = pd.to_datetime(sales_by_date["Order Date"])
+        sales_by_date = sales_by_date.set_index("Order Date").sort_index()
+        st.line_chart(sales_by_date)
+    else:
+        st.warning("선택된 날짜 범위에 데이터가 없습니다.")
 
     # --- 판매 건수 및 최신 가격 집계 ---
     sales_summary = df_sales_filtered.groupby("Product Description").agg({
@@ -186,7 +189,7 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
     df_info["판매 건수"] = df_info["판매 건수"].fillna(0).astype(int)
     df_info["SHEIN_PRICE"] = pd.to_numeric(df_info["SHEIN_PRICE"], errors="coerce")
 
-     # --- 권장 가격 계산 ---
+    # --- 권장 가격 계산 ---
     def recommend_price(row):
         erp = row["ERP PRICE"]
         shein = row["SHEIN_PRICE"]

@@ -146,11 +146,24 @@ elif page == "📊 세일즈 데이터 분석 (Shein)":
         st.warning("데이터가 없습니다.")
     else:
         df.columns = df.columns.str.strip()
-        df["Order Date"] = pd.to_datetime(df["Order basic information.24"], errors='coerce')
-        df["Style"] = df["Order basic information.9"].str.extract(r'(\b[A-Z0-9]{4,}\b)', expand=False)
-        df["Revenue"] = pd.to_numeric(df["Order basic information.33"], errors='coerce')
-        df["Price"] = pd.to_numeric(df["Order basic information.29"], errors='coerce')
-        df["Refunded"] = df["Order basic information.3"].str.contains("Refund", case=False)
+        st.write("데이터 컬럼 미리보기:", df.columns.tolist())
+
+        # 자동으로 날짜/스타일 컬럼 추측
+        order_date_col = next((col for col in df.columns if "processed" in col.lower() or "date" in col.lower()), None)
+        style_col = next((col for col in df.columns if "description" in col.lower()), None)
+        status_col = next((col for col in df.columns if "status" in col.lower()), None)
+        price_col = next((col for col in df.columns if "price" in col.lower()), None)
+        revenue_col = next((col for col in df.columns if "revenue" in col.lower()), None)
+
+        if not all([order_date_col, style_col, status_col, price_col, revenue_col]):
+            st.error("데이터 형식이 예상과 다릅니다. 컬럼명을 확인하세요.")
+            st.stop()
+
+        df["Order Date"] = pd.to_datetime(df[order_date_col], errors='coerce')
+        df["Style"] = df[style_col].str.extract(r'(\b[A-Z0-9]{4,}\b)', expand=False)
+        df["Revenue"] = pd.to_numeric(df[revenue_col], errors='coerce')
+        df["Price"] = pd.to_numeric(df[price_col], errors='coerce')
+        df["Refunded"] = df[status_col].str.contains("Refund", case=False, na=False)
 
         st.markdown("### 🔢 기본 요약")
         st.write(f"총 오더 수: {len(df)}")

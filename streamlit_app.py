@@ -8,39 +8,38 @@ import pandas as pd
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
 IMAGE_CSV = "product_images.csv"
 
-# --- 구글시트 로딩 함수
+# --- Google Sheets 로드 함수
 @st.cache_data
 def load_sheet():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     
-    # Secrets에서 인증 정보 불러와서 임시 파일로 저장
+    # Streamlit Secrets에서 서비스 계정 정보 받아와 임시 저장
     json_data = st.secrets["gcp_service_account"]
     with open("/tmp/service_account.json", "w") as f:
         json.dump(json_data, f)
 
     creds = ServiceAccountCredentials.from_json_keyfile_name("/tmp/service_account.json", scope)
     client = gspread.authorize(creds)
-
     sheet = client.open_by_url(GOOGLE_SHEET_URL).worksheet("Sheet1")
     data = sheet.get_all_records()
     return pd.DataFrame(data)
 
-# --- 이미지 CSV 로딩 함수
+# --- 이미지 CSV 로드
 @st.cache_data
 def load_images():
     try:
         return pd.read_csv(IMAGE_CSV)
-    except:
+    except FileNotFoundError:
         return pd.DataFrame()
 
-# --- 앱 시작
+# --- Streamlit 페이지 설정
 st.set_page_config(page_title="Capella Product Viewer", layout="wide")
-st.title("📖 Capella 제품 정보 (Google Sheets 조회 전용)")
+st.title("📖 Capella 제품 정보 (Google Sheets 기반 조회 전용)")
 
 df_info = load_sheet()
 df_img = load_images()
 
-# --- 스타일 검색
+# --- 검색 입력
 style_input = st.text_input("🔍 스타일 번호 검색:")
 
 if style_input:

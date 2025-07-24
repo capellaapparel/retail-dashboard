@@ -39,10 +39,10 @@ if page == "📖 스타일 정보 조회":
     try:
         df_info = load_google_sheet("Sheet1")
         df_img = load_images()
+        df_sales = load_google_sheet("Sheet2")
     except Exception as e:
         st.error("❌ 데이터 로드 실패: " + str(e))
         st.stop()
-
 
     style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
 
@@ -70,7 +70,19 @@ if page == "📖 스타일 정보 조회":
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['Product Number']}")
                 st.markdown(f"**ERP PRICE:** {row.get('ERP PRICE', '')}")
-                st.markdown(f"**SHEIN PRICE:** (판매 데이터 기반 추후 반영)")
+
+                df_sales.columns = df_sales.columns.str.strip()
+                df_sales["Order Date"] = pd.to_datetime(df_sales[df_sales.columns[24]], errors="coerce")
+                df_sales["Style"] = df_sales[df_sales.columns[9]].str.extract(r'(\b[A-Z0-9]{4,}\b)', expand=False)
+                df_sales["Price"] = pd.to_numeric(df_sales[df_sales.columns[29]], errors="coerce")
+                df_filtered = df_sales[df_sales["Style"] == selected].dropna(subset=["Order Date"])
+
+                shein_price = "-"
+                if not df_filtered.empty:
+                    closest_row = df_filtered.iloc[(df_filtered["Order Date"] - pd.Timestamp.today()).abs().argsort()].iloc[0]
+                    shein_price = closest_row["Price"]
+
+                st.markdown(f"**SHEIN PRICE:** ${shein_price}")
                 st.markdown(f"**TEMU PRICE:** (판매 데이터 기반 추후 반영)")
                 st.markdown(f"**SLEEVE:** {row.get('SLEEVE', '')}")
                 st.markdown(f"**NECKLINE:** {row.get('NECKLINE', '')}")
@@ -128,57 +140,3 @@ if page == "📖 스타일 정보 조회":
                 st.markdown("".join(html_parts), unsafe_allow_html=True)
             else:
                 st.caption("사이즈 정보가 없습니다.")
-
-# --- 세일즈 분석 페이지 ---
-elif page == "📊 세일즈 데이터 분석 (Shein)":
-    st.title("📊 Shein 세일즈 분석 대시보드")
-
-    try:
-        df = load_google_sheet("Sheet2")
-    except Exception as e:
-        st.error("❌ Shein 데이터 로드 실패: " + str(e))
-        st.stop()
-
-    if df.empty:
-        st.warning("데이터가 없습니다.")
-    else:
-        df.columns = df.columns.str.strip()
-        st.write("데이터 컬럼 미리보기:", df.columns.tolist())
-
-        # 자동으로 날짜/스타일 컬럼 추측
-        order_date_col = next((col for col in df.columns if "processed" in col.lower() or "date" in col.lower()), None)
-        style_col = next((col for col in df.columns if "description" in col.lower()), None)
-        status_col = next((col for col in df.columns if "status" in col.lower()), None)
-        price_col = next((col for col in df.columns if "price" in col.lower()), None)
-        revenue_col = next((col for col in df.columns if "revenue" in col.lower()), None)
-
-        if not all([order_date_col, style_col, status_col, price_col, revenue_col]):
-            st.error("데이터 형식이 예상과 다릅니다. 컬럼명을 확인하세요.")
-            st.stop()
-
-        df["Order Date"] = pd.to_datetime(df[order_date_col], errors='coerce')
-        df["Style"] = df[style_col].str.extract(r'(\b[A-Z0-9]{4,}\b)', expand=False)
-        df["Revenue"] = pd.to_numeric(df[revenue_col], errors='coerce')
-        df["Price"] = pd.to_numeric(df[price_col], errors='coerce')
-        df["Refunded"] = df[status_col].str.contains("Refund", case=False, na=False)
-
-        st.markdown("### 🔢 기본 요약")
-        st.write(f"총 오더 수: {len(df)}")
-        st.write(f"총 스타일 수: {df['Style'].nunique()}")
-        st.write(f"총 매출액: ${df['Revenue'].sum():,.2f}")
-        st.write(f"환불 비율: {df['Refunded'].mean() * 100:.2f}%")
-
-        st.markdown("### 📈 일별 판매 추이")
-        daily = df[~df["Refunded"]].groupby("Order Date")["Revenue"].sum()
-        st.line_chart(daily)
-
-        st.markdown("### 🏆 베스트셀러 TOP 10")
-        top_styles = df[~df["Refunded"]].groupby("Style")["Revenue"].sum().sort_values(ascending=False).head(10)
-        st.bar_chart(top_styles)
-
-        st.markdown("### ⚠️ 리펀드율 높은 스타일")
-        refund_rate = df.groupby("Style")["Refunded"].mean().sort_values(ascending=False).head(10)
-        st.bar_chart(refund_rate)
-
-        st.markdown("### 🔍 상세 데이터 보기")
-        st.dataframe(df[['Order Date', 'Style', 'Revenue', 'Price', 'Refunded']].sort_values(by="Order Date", ascending=False))

@@ -73,8 +73,8 @@ if page == "📖 스타일 정보 조회":
 
                 df_sales.columns = df_sales.columns.str.strip()
                 df_sales["Order Date"] = pd.to_datetime(df_sales[df_sales.columns[24]], errors="coerce")
-                df_sales["Style"] = df_sales[df_sales.columns[9]].str.extract(r'(\b[A-Z0-9]{4,}\b)', expand=False)
-                df_sales["Price"] = pd.to_numeric(df_sales[df_sales.columns[29]], errors="coerce")
+                df_sales["Style"] = df_sales["Product Description"].astype(str)
+                df_sales["Price"] = pd.to_numeric(df_sales["Product Price"], errors="coerce")
                 df_filtered = df_sales[df_sales["Style"] == selected].dropna(subset=["Order Date"])
 
                 shein_price = "-"

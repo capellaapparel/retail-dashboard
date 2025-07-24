@@ -172,20 +172,18 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
     st.markdown("### 📈 판매 추이 요약")
     if not df_sales_filtered.empty:
         sales_by_date = df_sales_filtered.groupby("Order Date").size().reset_index(name="Orders")
-        sales_by_date["Order Date"] = pd.to_datetime(sales_by_date["Order Date"])
         sales_by_date = sales_by_date.set_index("Order Date").sort_index()
         st.line_chart(sales_by_date)
     else:
         st.warning("선택된 날짜 범위에 데이터가 없습니다.")
 
     # --- 판매 건수 및 최신 가격 집계 ---
-    sales_summary = df_sales_filtered.groupby("Product Description").agg({
-        "Order Date": "count",
-        "Product Price": lambda x: x.iloc[-1]
-    }).reset_index().rename(columns={"Order Date": "판매 건수", "Product Price": "SHEIN_PRICE"})
+    latest_prices = df_sales_filtered.sort_values("Order Date").drop_duplicates("Product Description", keep="last")
+    sales_summary = df_sales_filtered.groupby("Product Description").size().reset_index(name="판매 건수")
+    sales_summary = sales_summary.merge(latest_prices[["Product Description", "Product Price"]], on="Product Description", how="left")
+    sales_summary = sales_summary.rename(columns={"Product Price": "SHEIN_PRICE"})
 
     df_info = df_info.merge(sales_summary, how="left", left_on="Product Number", right_on="Product Description")
-
     df_info["판매 건수"] = df_info["판매 건수"].fillna(0).astype(int)
     df_info["SHEIN_PRICE"] = pd.to_numeric(df_info["SHEIN_PRICE"], errors="coerce")
 

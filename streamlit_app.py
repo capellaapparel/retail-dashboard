@@ -144,7 +144,7 @@ if page == "📖 스타일 정보 조회":
                 st.caption("사이즈 정보가 없습니다.")
 
 
-
+# --- 세일즈 데이터 분석 페이지 ---
 if page == "📊 세일즈 데이터 분석 (Shein)":
     try:
         df_info = load_google_sheet("Sheet1")
@@ -177,21 +177,21 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
     sales_summary = df_sales_filtered.groupby("Product Description").agg({
         "Order Date": "count",
         "Product Price": lambda x: x.iloc[-1]
-    }).reset_index().rename(columns={"Order Date": "판매 건수", "Product Price": "SHEIN PRICE"})
+    }).reset_index().rename(columns={"Order Date": "판매 건수", "Product Price": "SHEIN_PRICE"})
 
     df_info = df_info.merge(sales_summary, how="left", left_on="Product Number", right_on="Product Description")
 
     df_info["판매 건수"] = df_info["판매 건수"].fillna(0).astype(int)
-    df_info["SHEIN PRICE"] = pd.to_numeric(df_info["SHEIN PRICE"], errors="coerce")
+    df_info["SHEIN_PRICE"] = pd.to_numeric(df_info["SHEIN_PRICE"], errors="coerce")
 
     # --- 권장 가격 계산 ---
     def recommend_price(row):
         if row["판매 건수"] == 0:
-            return min(row["ERP PRICE"] + 3, row["SHEIN PRICE"] if pd.notnull(row["SHEIN PRICE"]) else 999)
+            return min(row["ERP PRICE"] + 3, row["SHEIN_PRICE"] if pd.notnull(row["SHEIN_PRICE"]) else 999)
         elif row["판매 건수"] >= 20:
             return row["ERP PRICE"] + 7
         else:
-            return row["SHEIN PRICE"] if pd.notnull(row["SHEIN PRICE"]) else row["ERP PRICE"] + 5
+            return row["SHEIN_PRICE"] if pd.notnull(row["SHEIN_PRICE"]) else row["ERP PRICE"] + 5
 
     df_info["권장 가격"] = df_info.apply(recommend_price, axis=1)
 
@@ -199,7 +199,7 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
     st.markdown("### ⬇️ 가격 인하 제안")
     try:
         lower_table = df_info[df_info["판매 건수"] <= 2].sort_values("판매 건수")[
-            ["Product Number", "판매 건수", "ERP PRICE", "SHEIN PRICE", "권장 가격"]]
+            ["Product Number", "판매 건수", "ERP PRICE", "SHEIN_PRICE", "권장 가격"]]
         st.dataframe(lower_table.style.apply(lambda r: ["background-color: #ffe6e6"] * len(r), axis=1),
                      use_container_width=True)
     except KeyError as ke:
@@ -209,10 +209,8 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
     st.markdown("### ⬆️ 가격 인상 제안")
     try:
         raise_table = df_info[df_info["판매 건수"] >= 20].sort_values("판매 건수", ascending=False)[
-            ["Product Number", "판매 건수", "ERP PRICE", "SHEIN PRICE", "권장 가격"]]
+            ["Product Number", "판매 건수", "ERP PRICE", "SHEIN_PRICE", "권장 가격"]]
         st.dataframe(raise_table.style.apply(lambda r: ["background-color: #e6ffe6"] * len(r), axis=1),
                      use_container_width=True)
     except KeyError as ke:
         st.warning(f"⚠️ 데이터 누락으로 인상 제안 테이블 생성 불가: {ke}")
-
-    

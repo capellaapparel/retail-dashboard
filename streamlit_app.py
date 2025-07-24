@@ -35,7 +35,7 @@ def load_images():
 
 # --- 스타일 정보 조회 페이지 ---
 if page == "📖 스타일 정보 조회":
-    st.title("📖 스타일 정보")
+    st.title("📖 스타일 정보 (읽기 전용)")
     try:
         df_info = load_google_sheet("Sheet1")
         df_img = load_images()
@@ -72,7 +72,7 @@ if page == "📖 스타일 정보 조회":
                 st.markdown(f"**ERP PRICE:** {row.get('ERP PRICE', '')}")
 
                 df_sales.columns = df_sales.columns.str.strip()
-                df_sales["Order Date"] = pd.to_datetime(df_sales[df_sales.columns[24]], errors="coerce")
+                df_sales["Order Date"] = pd.to_datetime(df_sales["Order basic information.24"], errors="coerce")
                 df_sales["Style"] = df_sales["Product Description"].astype(str)
                 df_sales["Price"] = pd.to_numeric(df_sales["Product Price"], errors="coerce")
                 df_filtered = df_sales[df_sales["Style"] == selected].dropna(subset=["Order Date"])
@@ -141,76 +141,45 @@ if page == "📖 스타일 정보 조회":
             else:
                 st.caption("사이즈 정보가 없습니다.")
 
-
 # --- 세일즈 데이터 분석 페이지 ---
 elif page == "📊 세일즈 데이터 분석 (Shein)":
     st.title("📊 Shein 세일즈 데이터 분석")
     try:
-        df_info = load_google_sheet("Sheet1")  # 스타일 정보 시트 불러오기
+        df_info = load_google_sheet("Sheet1")
         df_sales = load_google_sheet("Sheet2")
     except Exception as e:
         st.error("❌ 데이터 로드 실패: " + str(e))
         st.stop()
 
     df_sales.columns = df_sales.columns.str.strip()
-    df_sales["Order Date"] = pd.to_datetime(df_sales["Order Processed On"], errors="coerce")
+    df_sales["Order Date"] = pd.to_datetime(df_sales["Order basic information.24"], errors="coerce")
     df_sales["Style"] = df_sales["Product Description"].astype(str)
     df_sales["Price"] = pd.to_numeric(df_sales["Product Price"], errors="coerce")
-
-    st.markdown("### 🔢 요약 통계")
-    st.write(df_sales.groupby("Style")["Price"].agg(["count", "mean", "sum"]).rename(columns={
-        "count": "주문 수", "mean": "평균 가격", "sum": "총 매출"
-    }).sort_values("총 매출", ascending=False).head(20))
 
     st.markdown("### 📅 날짜별 매출 추이")
     df_daily = df_sales.groupby("Order Date")["Price"].sum().reset_index()
     st.line_chart(df_daily.set_index("Order Date"))
 
-st.markdown("### 💡 가격 전략 제안")
+    st.markdown("### 💡 가격 전략 제안")
 
-# 전체 스타일 목록
-all_styles = df_info["Product Number"].astype(str).unique()
-sold_styles = df_sales["Style"].dropna().unique()
-unsold_styles = set(all_styles) - set(sold_styles)
+    def suggest_price(erp, sales_count):
+        if pd.isna(erp): return "-"
+        if sales_count == 0: return round(erp + 3, 2)
+        elif sales_count <= 2: return round(erp + 4.5, 2)
+        else: return ""
 
-# 판매 이력 없는 제품
-st.subheader("❌ 판매 없음 (가격 인하 추천)")
-if unsold_styles:
-    st.write(df_info[df_info["Product Number"].isin(unsold_styles)][["Product Number", "ERP PRICE"]])
-else:
-    st.caption("모든 제품에 판매 이력이 있습니다.")
+    sales_counts = df_sales["Style"].value_counts().to_dict()
+    df_info["판매 건수"] = df_info["Product Number"].astype(str).map(sales_counts).fillna(0).astype(int)
+    df_info["ERP PRICE"] = pd.to_numeric(df_info["ERP PRICE"], errors="coerce")
+    shein_prices = df_sales.dropna(subset=["Order Date"])
+    latest_price = shein_prices.sort_values("Order Date").drop_duplicates("Style", keep="last")[["Style", "Price"]].set_index("Style")["Price"]
+    df_info["SHEIN PRICE"] = df_info["Product Number"].astype(str).map(latest_price)
+    df_info["권장 가격"] = df_info.apply(lambda row: suggest_price(row["ERP PRICE"], row["판매 건수"]), axis=1)
 
-# 판매 건수별 집계
-style_summary = df_sales.groupby("Style")["Price"].agg(["count", "mean"]).reset_index()
-low_sales = style_summary[style_summary["count"] <= 2]
+    styled_table = df_info[["Product Number", "판매 건수", "ERP PRICE", "SHEIN PRICE", "권장 가격"]]
+    styled_table = styled_table.sort_values("판매 건수")
 
-st.subheader("⚠️ 판매 저조 (가격 재검토 권장)")
-if not low_sales.empty:
-    low_df = df_info[df_info["Product Number"].isin(low_sales["Style"])]
-    st.write(low_df[["Product Number", "ERP PRICE"]].merge(low_sales, left_on="Product Number", right_on="Style"))
-else:
-    st.caption("판매 저조 제품이 없습니다.")
+    def highlight(row):
+        return ["background-color: #ffe6e6" if row["판매 건수"] <= 2 else "" for _ in row]
 
-def suggest_price(erp, sales_count):
-    if pd.isna(erp):
-        return "-"
-    if sales_count == 0:
-        return round(erp + 3, 2)
-    elif sales_count <= 2:
-        return round(erp + 4.5, 2)
-    else:
-        return round(erp + 6.5, 2)
-
-# 모든 스타일별 판매 수
-sales_counts = df_sales["Style"].value_counts().to_dict()
-df_info["판매 건수"] = df_info["Product Number"].astype(str).map(sales_counts).fillna(0).astype(int)
-df_info["ERP PRICE"] = pd.to_numeric(df_info["ERP PRICE"], errors="coerce")
-
-df_info["💡 권장 Shein 가격"] = df_info.apply(lambda row: suggest_price(row["ERP PRICE"], row["판매 건수"]), axis=1)
-
-# 결과 보여주기
-st.subheader("📌 스타일별 권장 가격")
-st.write(df_info[["Product Number", "ERP PRICE", "판매 건수", "💡 권장 Shein 가격"]])
-
-
-
+    st.dataframe(styled_table.style.apply(highlight, axis=1), use_container_width=True)

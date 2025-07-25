@@ -48,19 +48,19 @@ def get_latest_shein_price(df_sales, product_number):
     return None
 
 def get_latest_temu_price(df_temu, product_number):
-    # 모든 컬럼명 소문자, 앞뒤공백 제거로 리네임
+    # 모든 컬럼 소문자, 공백 제거
     df_temu.columns = [c.strip().lower() for c in df_temu.columns]
-    style_col = [c for c in df_temu.columns if "contribution" in c and "sku" in c][0]
-    status_col = [c for c in df_temu.columns if "order item status" in c][0]
-    date_col = [c for c in df_temu.columns if "purchase date" in c][0]
-    price_col = [c for c in df_temu.columns if "base price total" in c][0]
+    style_col = "SKU"        
+    status_col = "order item status"
+    date_col = "purchase date"
+    price_col = "PRICE"      
 
-    # TEMU 스타일넘버 추출
+    # 스타일넘버만 추출 (SKU가 BP3365-BLACK-L → BP3365만)
     df_temu["temu_style"] = df_temu[style_col].apply(
         lambda x: re.split(r'[-_]', str(x).strip().upper())[0] if pd.notna(x) else ""
     )
 
-    # 완전일치만!
+    # 완전 일치 (선택된 스타일 넘버와)
     filtered = df_temu[
         (df_temu["temu_style"] == str(product_number).upper())
         & (df_temu[status_col].str.lower() != "cancelled")

@@ -54,13 +54,20 @@ def get_latest_temu_price(df_temu, product_number):
     status_col = "order item status"
     date_col = "purchase date"
     price_col = "base price total"
+
     if style_col not in df_temu.columns or status_col not in df_temu.columns:
+        st.write("❌ TEMU_SALES 필수 컬럼 없음! 현재 컬럼들:", df_temu.columns)
         return "NA"
+
     df_temu["temu_style"] = df_temu[style_col].astype(str).apply(lambda x: str(x).split('-')[0].strip().upper())
     product_number = str(product_number).strip().upper()
     df_temu[status_col] = df_temu[status_col].astype(str).str.strip().str.lower()
     df_temu[date_col] = df_temu[date_col].astype(str).str.strip()
+
     filtered = df_temu[(df_temu["temu_style"] == product_number) & (df_temu[status_col] != "cancelled")]
+    st.write("====TEMU 필터 rows 수:", len(filtered))
+    st.write("====TEMU 필터 rows 샘플:", filtered[[style_col, "temu_style", price_col, date_col]].head(10))
+
     if not filtered.empty:
         filtered = filtered.copy()
         filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
@@ -68,17 +75,19 @@ def get_latest_temu_price(df_temu, product_number):
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
             price = latest.get(price_col)
-            # --- 아래 한 줄만 남기면 됨 ---
+            st.write("====최신 TEMU row:", latest)
+            st.write("====최신 TEMU price 값:", price, type(price))
             try:
-                # 만약 price가 None, ''일 때 대비, $/공백/쉼표 다 삭제
                 if price is None or str(price).strip() == "":
                     return "NA"
                 price_str = str(price).replace("$", "").replace(",", "").strip()
                 price_f = float(price_str)
                 return f"${price_f:.2f}"
             except Exception as ex:
+                st.write("====TEMU 가격 변환 에러:", price, ex)
                 return "NA"
     return "NA"
+
 
 
 

@@ -78,6 +78,25 @@ def get_latest_temu_price(df_temu, product_number):
                 return "NA"
     return "NA"
 
+# 이미 matched, latest까지 구한 상황
+if not matched.empty:
+    matched = matched.copy()
+    matched["Order Date"] = pd.to_datetime(matched[date_col], errors="coerce")
+    matched = matched.dropna(subset=["Order Date"])
+    if not matched.empty:
+        latest = matched.sort_values("Order Date").iloc[-1]
+        price = latest.get(price_col)
+        st.write("----TEMU PRICE RAW VALUE:", price)    # << 이 줄 추가
+        try:
+            price = float(str(price).replace("$", "").replace(",", ""))
+            st.write("----TEMU PRICE float VALUE:", price)  # << 이 줄 추가
+            return f"${price:.2f}"
+        except Exception as ex:
+            st.write("----TEMU 가격 변환 에러:", price, ex)   # << 이 줄 추가
+            return "NA"
+return "NA"
+
+
 def show_info_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() != "":
         st.markdown(f"**{label}:** {value}")

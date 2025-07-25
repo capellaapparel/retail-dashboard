@@ -155,11 +155,16 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
         st.stop()
 
     df_sales.columns = df_sales.columns.str.strip()
+    df_info.columns = df_info.columns.str.strip()
+
+    # 컬럼명 및 샘플값 디버깅
+    st.write("df_sales 컬럼명:", df_sales.columns.tolist())
+    st.write("df_info 컬럼명:", df_info.columns.tolist())
+    st.write("df_sales['Product Description'] 샘플:", df_sales["Product Description"].head(10))
+    st.write("df_info['Product Number'] 샘플:", df_info["Product Number"].head(10))
+
     # robust 날짜 파싱
-    st.write("원본 Order Processed On 10줄:", df_sales["Order Processed On"].head(10))
-    df_sales["Order Date"] = pd.to_datetime(
-        df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True
-    )
+    df_sales["Order Date"] = pd.to_datetime(df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True)
     st.write("파싱 후 Order Date 10줄:", df_sales["Order Date"].head(10))
     st.write("파싱 후 전체 row 수:", len(df_sales))
     df_sales = df_sales.dropna(subset=["Order Date"])
@@ -175,14 +180,13 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
         key="shein_sales_date_range"
     )
 
-    st.write("Order Date 샘플 as list:", list(df_sales["Order Date"].head(10)))
-    st.write(df_sales.info())
-    st.write(df_sales.head(10))
+    # 값 strip!
+    df_sales["Product Description"] = df_sales["Product Description"].astype(str).str.strip()
+    df_info["Product Number"] = df_info["Product Number"].astype(str).str.strip()
 
     if isinstance(date_range, list) and len(date_range) == 2:
         start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
         compare = df_sales["Order Date"].dt.date
-        st.write("Order Date 첫 10개(date):", compare.head(10))
         df_sales_filtered = df_sales[
             (compare >= start.date()) &
             (compare <= end.date())
@@ -210,10 +214,17 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
         )
         sales_summary = sales_summary.rename(columns={"Product Price": "SHEIN_PRICE"})
 
+        # merge 전 확인
+        st.write("sales_summary head:", sales_summary.head())
+        st.write("df_info head(merge 전):", df_info.head())
+
         df_info = df_info.merge(
             sales_summary, how="left",
             left_on="Product Number", right_on="Product Description"
         )
+
+        st.write("df_info head(merge 후):", df_info.head())
+
         df_info["판매 건수"] = df_info["판매 건수"].fillna(0).astype(int)
         df_info["SHEIN_PRICE"] = pd.to_numeric(df_info["SHEIN_PRICE"], errors="coerce")
 
@@ -252,4 +263,3 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
                          use_container_width=True)
         except KeyError as ke:
             st.warning(f"⚠️ 데이터 누락으로 인상 제안 테이블 생성 불가: {ke}")
-

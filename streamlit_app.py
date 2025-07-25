@@ -32,52 +32,6 @@ def load_google_sheet(sheet_name):
 def load_images():
     return pd.read_csv(IMAGE_CSV)
 
-def get_latest_temu_price(df_temu, product_number):
-    df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
-    style_col = "contribution sku"
-    status_col = "order item status"
-    date_col = "purchase date"
-    price_col = "base price total"
-    if style_col not in df_temu.columns or status_col not in df_temu.columns:
-        st.write("TEMU_SALES 시트에 필수 컬럼이 없습니다! 컬럼명:", df_temu.columns.tolist())
-        return "NA"
-    # 실제 스타일넘버 생성
-    df_temu["temu_style"] = df_temu[style_col].astype(str).str.split("-").str[0].str.strip().str.upper()
-    df_temu[status_col] = df_temu[status_col].astype(str).str.strip().str.lower()
-    df_temu[date_col] = df_temu[date_col].astype(str).str.strip()
-    product_number = str(product_number).strip().upper()
-
-    # 🔥 디버깅: 화면에 다 찍어줌
-    st.write("선택 Product Number:", product_number)
-    st.write("TEMU SKU 10줄:", df_temu[[style_col, "temu_style"]].head(10))
-    st.write("TEMU 전체 unique style(10개):", df_temu["temu_style"].unique()[:10])
-    st.write("TEMU 전체 unique Product Number(10개):", df_temu["temu_style"].unique()[:10])
-    st.write("TEMU Product Number 길이:", [len(x) for x in df_temu["temu_style"].unique()[:10]])
-    st.write("TEMU Filtered row 수:", len(df_temu[df_temu["temu_style"] == product_number]))
-
-    # 필터
-    filtered = df_temu[
-        (df_temu["temu_style"] == product_number) &
-        (df_temu[status_col] != "cancelled")
-    ]
-    st.write("Filtered head:", filtered.head(5))
-
-    if not filtered.empty:
-        filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
-        filtered = filtered.dropna(subset=["Order Date"])
-        if not filtered.empty:
-            latest = filtered.sort_values("Order Date").iloc[-1]
-            price = latest.get(price_col)
-            if isinstance(price, str):
-                price = price.replace("$", "").replace(",", "")
-            try:
-                price = float(price)
-                return f"${price:.2f}"
-            except Exception as ex:
-                st.write("가격 변환 에러:", price, ex)
-                return "NA"
-    return "NA"
-
 def get_latest_shein_price(df_sales, product_number):
     filtered = df_sales[df_sales["Product Description"].astype(str).str.strip().str.upper() == str(product_number).upper()]
     if not filtered.empty:
@@ -94,10 +48,41 @@ def get_latest_shein_price(df_sales, product_number):
                 return "NA"
     return "NA"
 
+def get_latest_temu_price(df_temu, product_number):
+    # 컬럼명 소문자화 및 공백제거
+    df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
+    style_col = "contribution sku"
+    status_col = "order item status"
+    date_col = "purchase date"
+    price_col = "base price total"
+    if style_col not in df_temu.columns or status_col not in df_temu.columns:
+        return "NA"
+    # contribution sku에서 '-' 앞까지가 스타일 넘버!
+    df_temu["temu_style"] = df_temu[style_col].astype(str).apply(lambda x: str(x).split('-')[0].strip().upper())
+    product_number = str(product_number).strip().upper()
+    df_temu[status_col] = df_temu[status_col].astype(str).str.strip().str.lower()
+    df_temu[date_col] = df_temu[date_col].astype(str).str.strip()
+    # 필터: Product Number와 정확히 일치, Cancelled/취소 제외
+    filtered = df_temu[(df_temu["temu_style"] == product_number) & (df_temu[status_col] != "cancelled")]
+    if not filtered.empty:
+        filtered = filtered.copy()
+        filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
+        filtered = filtered.dropna(subset=["Order Date"])
+        if not filtered.empty:
+            latest = filtered.sort_values("Order Date").iloc[-1]
+            price = latest.get(price_col)
+            try:
+                price = float(str(price).replace("$", "").replace(",", ""))
+                return f"${price:.2f}"
+            except:
+                return "NA"
+    return "NA"
+
 def show_info_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() != "":
         st.markdown(f"**{label}:** {value}")
 
+# --- 스타일 정보 조회 페이지 ---
 if page == "📖 스타일 정보 조회":
     try:
         df_info = load_google_sheet(PRODUCT_SHEET)
@@ -121,23 +106,21 @@ if page == "📖 스타일 정보 조회":
 
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
-
             with col1:
                 if image_url:
                     st.image(image_url, width=300)
                 else:
                     st.caption("이미지 없음")
-
             with col2:
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['Product Number']}")
                 show_info_block("ERP PRICE", row.get("ERP PRICE", ""))
-
+                # 가격: TEMU → SHEIN 순서, 값 없으면 NA
                 latest_temu = get_latest_temu_price(df_temu, selected)
                 latest_shein = get_latest_shein_price(df_shein, selected)
                 st.markdown(f"**TEMU PRICE:** {latest_temu}")
                 st.markdown(f"**SHEIN PRICE:** {latest_shein}")
-
+                # 빈 정보 자동 생략
                 for col, label in [
                     ("SLEEVE", "SLEEVE"), ("NECKLINE", "NECKLINE"), ("LENGTH", "LENGTH"),
                     ("FIT", "FIT"), ("DETAIL", "DETAIL"), ("STYLE MOOD", "STYLE MOOD"),
@@ -149,8 +132,10 @@ if page == "📖 스타일 정보 조회":
 
             st.markdown("---")
             st.subheader("📏 Size Chart")
+
             def has_size_data(*args):
                 return any(str(v).strip() not in ["", "0", "0.0"] for v in args)
+
             top1_vals = (row.get("TOP1_CHEST", ""), row.get("TOP1_LENGTH", ""), row.get("TOP1_SLEEVE", ""))
             top2_vals = (row.get("TOP2_CHEST", ""), row.get("TOP2_LENGTH", ""), row.get("TOP2_SLEEVE", ""))
             bottom_vals = (row.get("BOTTOM_WAIST", ""), row.get("BOTTOM_HIP", ""), row.get("BOTTOM_LENGTH", ""), row.get("BOTTOM_INSEAM", ""))

@@ -127,7 +127,7 @@ if page == "📖 스타일 정보 조회":
                 show_info_block("ERP PRICE", row.get("ERP PRICE", ""))
                 # ★★★ 가격 항목 항상 표시(없으면 NA) ★★★
                 shein_display = get_latest_shein_price(df_shein, selected)
-                temu_display = get_latest_temu_price(df_temu, selected)
+                latest_temu = get_latest_temu_price(df_temu, selected)
                 st.markdown(f"**SHEIN PRICE:** {shein_display}")
                 st.markdown(f"**TEMU PRICE:** {latest_temu}")
                 # 스타일 속성들 빈값만 생략

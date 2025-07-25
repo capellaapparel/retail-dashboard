@@ -68,7 +68,7 @@ def get_latest_temu_price(df_temu, style_num):
     # st.write("TEMU DEBUG", style_num, filtered[["스타일넘버", price_col, date_col]].head(2))  # 디버깅용
 
     if not filtered.empty and date_col in filtered.columns:
-        filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce", infer_datetime_format=True)
+        filtered["Order Date"] = pd.to_datetime(filtered["purchase date"], errors="coerce")
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]

@@ -154,18 +154,25 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
         st.stop()
 
     df_sales.columns = df_sales.columns.str.strip()
-    df_sales["Order Date"] = pd.to_datetime(df_sales["Order Processed On"], errors="coerce")
+    df_sales["Order Date"] = pd.to_datetime(
+    df_sales["Order Processed On"],
+    format="%Y-%B-%d %H:%M",   # 월은 영어 전체, 시:분
+    errors="coerce"
+    )
     df_sales = df_sales.dropna(subset=["Order Date"])
 
   # --- 날짜 필터 ---
-min_date, max_date = df_sales["Order Date"].min(), df_sales["Order Date"].max()
+min_date, max_date = df_sales["Order Date"].dt.date.min(), df_sales["Order Date"].dt.date.max()
 date_range = st.date_input("📅 날짜 범위 선택", [min_date, max_date], format="YYYY-MM-DD")
 
 df_sales_filtered = pd.DataFrame()
 
 if isinstance(date_range, list) and len(date_range) == 2:
     start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
-    df_sales_filtered = df_sales[(df_sales["Order Date"] >= start) & (df_sales["Order Date"] <= end)]
+    df_sales_filtered = df_sales[
+        (df_sales["Order Date"].dt.date >= start.date()) &
+        (df_sales["Order Date"].dt.date <= end.date())
+    ]
 
 # 결과 분기문: 날짜 필터 always 있음!
 if df_sales_filtered.empty:

@@ -45,35 +45,27 @@ def get_latest_shein_price(df_sales, product_number):
     return None
 
 def get_latest_temu_price(df_temu, product_number):
-    style_col = "contribution sku"
-    status_col = "order item status"
-    date_col = "purchase date"
-    price_col = "base price total"
-
-    # 스타일넘버만 추출: BP3365-BLACK-L → BP3365 (대소문자 무시)
+    # 스타일번호만 추출 (contribution sku의 - 앞부분)
     df_temu = df_temu.copy()
-    df_temu["temu_style"] = df_temu[style_col].apply(
+    df_temu["temu_style"] = df_temu["contribution sku"].apply(
         lambda x: str(x).split('-')[0].strip().upper() if pd.notna(x) else ""
     )
-
-    # *** Product Number 정확히 일치만 ***
+    # 상태 Cancelled 아닌 것만
     filtered = df_temu[
         (df_temu["temu_style"] == str(product_number).upper()) &
-        (df_temu[status_col].str.lower() != "cancelled")
+        (df_temu["order item status"].str.lower() != "cancelled")
     ]
-
-    # 가장 최근 거래
     if not filtered.empty:
-        filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
+        filtered["Order Date"] = pd.to_datetime(filtered["purchase date"], errors="coerce")
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
-            price = latest.get(price_col)
+            price = latest.get("base price total")
             if isinstance(price, str):
                 price = price.replace("$", "").replace(",", "")
             try:
                 price = float(price)
-                return f"{price:.2f}"
+                return f"${price:.2f}"
             except:
                 return None
     return None

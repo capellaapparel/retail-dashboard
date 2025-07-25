@@ -62,6 +62,11 @@ def get_latest_temu_price(df_temu, product_number):
     df_temu[date_col] = df_temu[date_col].astype(str).str.strip()
     product_number = str(product_number).strip().upper()
 
+    # 디버깅: TEMU_SKU 필터링 확인
+    st.write("TEMU 전체 SKU/STYLE(10줄)", df_temu[[style_col, "temu_style"]].head(10))
+    st.write("선택된 스타일:", product_number)
+    st.write("TEMU 매칭 row:", df_temu[df_temu["temu_style"] == product_number].head(5))
+
     # 필터: 정확히 Product Number와 일치, Cancelled 제외
     filtered = df_temu[
         (df_temu["temu_style"] == product_number) &
@@ -99,7 +104,7 @@ if page == "📖 스타일 정보 조회":
         st.error("❌ 데이터 로드 실패: " + str(e))
         st.stop()
 
-style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
+    style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
     if style_input:
         matched = df_info[df_info["Product Number"].astype(str).str.contains(style_input, case=False, na=False)]
         if matched.empty:
@@ -110,19 +115,8 @@ style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
             img_row = df_img[df_img["Product Number"] == selected]
             image_url = img_row.iloc[0]["First Image"] if not img_row.empty else None
 
-            # ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
-            # 디버깅: TEMU_SKU 필터링 확인
-            df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
-            style_col = "contribution sku"
-            df_temu["temu_style"] = df_temu[style_col].astype(str).str.split("-").str[0].str.strip().str.upper()
-            st.write("TEMU 전체 SKU/STYLE(10줄)", df_temu[[style_col, "temu_style"]].head(10))
-            st.write("선택된 스타일:", selected)
-            st.write("TEMU 매칭 row:", df_temu[df_temu["temu_style"] == selected].head(5))
-            # ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
-
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
-
             with col1:
                 if image_url:
                     st.image(image_url, width=300)
@@ -134,7 +128,6 @@ style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
                 st.markdown(f"**Product Number:** {row['Product Number']}")
                 show_info_block("ERP PRICE", row.get("ERP PRICE", ""))
 
-                # 가격: 정확한 Product Number만 매칭!
                 latest_shein = get_latest_shein_price(df_shein, selected)
                 latest_temu = get_latest_temu_price(df_temu, selected)
                 if latest_shein is not None and str(latest_shein).strip() != "":
@@ -142,7 +135,6 @@ style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
                 if latest_temu is not None and str(latest_temu).strip() != "":
                     st.markdown(f"**TEMU PRICE:** {latest_temu}")
 
-                # 빈 정보 자동 생략
                 for col, label in [
                     ("SLEEVE", "SLEEVE"), ("NECKLINE", "NECKLINE"), ("LENGTH", "LENGTH"),
                     ("FIT", "FIT"), ("DETAIL", "DETAIL"), ("STYLE MOOD", "STYLE MOOD"),

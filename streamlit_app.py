@@ -70,25 +70,25 @@ def get_latest_temu_price(df_temu, product_number):
     filtered = filtered.dropna(subset=["Order Date"])
     filtered = filtered.sort_values("Order Date", ascending=False)
 
-    # **추가: 유효 가격 있는 첫 row만 추출**
+    st.write("====TEMU 최종 rows====", filtered[[style_col, price_col, date_col]].head(10))  # 필터된 row 10개 모두 보여줌
+
     for idx, row in filtered.iterrows():
         price = row.get(price_col)
-        if price is None:
-            continue
+        st.write(f"TEMU row idx={idx}, price_raw={price!r}")
         try:
-            if isinstance(price, str):
-                price_str = price.replace("$", "").replace(",", "").strip()
-                if price_str == "" or price_str.lower() == "na":
-                    continue
-                price_f = float(price_str)
-            else:
-                if pd.isna(price):
-                    continue
-                price_f = float(price)
+            if price is None:
+                continue
+            price_str = str(price).replace("$", "").replace(",", "").strip()
+            if price_str == "" or price_str.lower() == "na":
+                continue
+            price_f = float(price_str)
+            st.write(f"▶︎ TEMU price_f: {price_f}")
             return f"${price_f:.2f}"
         except Exception as ex:
+            st.write(f"✖︎ 변환에러: {price!r} → {ex}")
             continue
     return "NA"
+
 
 
 

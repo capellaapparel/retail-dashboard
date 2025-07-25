@@ -62,8 +62,10 @@ def get_latest_temu_price(df_temu, product_number):
     product_number = str(product_number).strip().upper()
     df_temu[status_col] = df_temu[status_col].astype(str).str.strip().str.lower()
     df_temu[date_col] = df_temu[date_col].astype(str).str.strip()
+
     # 필터: Product Number와 정확히 일치, Cancelled/취소 제외
     filtered = df_temu[(df_temu["temu_style"] == product_number) & (df_temu[status_col] != "cancelled")]
+    st.write("TEMU PRICE Filtered rows:", filtered.shape[0])   # <== (디버깅) 필터된 행 수
     if not filtered.empty:
         filtered = filtered.copy()
         filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
@@ -71,30 +73,15 @@ def get_latest_temu_price(df_temu, product_number):
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
             price = latest.get(price_col)
+            st.write("----TEMU PRICE RAW VALUE:", price)    # << 디버깅!
             try:
-                price = float(str(price).replace("$", "").replace(",", ""))
-                return f"${price:.2f}"
-            except:
+                price_float = float(str(price).replace("$", "").replace(",", ""))
+                st.write("----TEMU PRICE float VALUE:", price_float)
+                return f"${price_float:.2f}"
+            except Exception as ex:
+                st.write("----TEMU 가격 변환 에러:", price, ex)
                 return "NA"
     return "NA"
-
-# 이미 matched, latest까지 구한 상황
-if not matched.empty:
-    matched = matched.copy()
-    matched["Order Date"] = pd.to_datetime(matched[date_col], errors="coerce")
-    matched = matched.dropna(subset=["Order Date"])
-    if not matched.empty:
-        latest = matched.sort_values("Order Date").iloc[-1]
-        price = latest.get(price_col)
-        st.write("----TEMU PRICE RAW VALUE:", price)    # << 이 줄 추가
-        try:
-            price = float(str(price).replace("$", "").replace(",", ""))
-            st.write("----TEMU PRICE float VALUE:", price)  # << 이 줄 추가
-            return f"${price:.2f}"
-        except Exception as ex:
-            st.write("----TEMU 가격 변환 에러:", price, ex)   # << 이 줄 추가
-            return "NA"
-return "NA"
 
 
 def show_info_block(label, value):

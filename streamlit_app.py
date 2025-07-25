@@ -71,7 +71,9 @@ if page == "📖 스타일 정보 조회":
 
                 # robust 날짜 파싱
                 df_sales.columns = df_sales.columns.str.strip()
-                df_sales["Order Date"] = pd.to_datetime(df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True)
+                df_sales["Order Date"] = pd.to_datetime(
+                    df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True
+                )
                 df_sales = df_sales.dropna(subset=["Order Date"])
 
                 df_sales["Style"] = df_sales["Product Description"].astype(str)
@@ -143,7 +145,6 @@ if page == "📖 스타일 정보 조회":
             else:
                 st.caption("사이즈 정보가 없습니다.")
 
-
 # --- 세일즈 데이터 분석 페이지 ---
 if page == "📊 세일즈 데이터 분석 (Shein)":
     try:
@@ -155,23 +156,15 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
         st.stop()
 
     df_sales.columns = df_sales.columns.str.strip()
-
-    # robust 날짜 파싱
     df_sales["Order Date"] = pd.to_datetime(
         df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True
     )
     df_sales = df_sales.dropna(subset=["Order Date"])
 
-    # --- 날짜 필터 ---
     min_date, max_date = df_sales["Order Date"].dt.date.min(), df_sales["Order Date"].dt.date.max()
-    date_range = st.date_input("📅 날짜 범위 선택", [min_date, max_date], format="YYYY-MM-DD")
+    st.caption(f"데이터가 존재하는 날짜 범위는 {min_date} ~ {max_date} 입니다.")
 
-    # st.write 디버깅
-    if len(df_sales) > 0:
-        st.write("df_sales['Order Date'] 샘플:", df_sales["Order Date"].head(10))
-        st.write("Order Date dtype:", df_sales["Order Date"].dtype)
-        st.write("min:", df_sales['Order Date'].min(), "/ max:", df_sales['Order Date'].max())
-        st.write("선택한 date_range:", date_range)
+    date_range = st.date_input("📅 날짜 범위 선택", [min_date, max_date], format="YYYY-MM-DD")
 
     if isinstance(date_range, list) and len(date_range) == 2:
         start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
@@ -181,8 +174,6 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
         ]
     else:
         df_sales_filtered = pd.DataFrame()
-
-    st.write("df_sales_filtered row 수:", len(df_sales_filtered))
 
     if df_sales_filtered.empty:
         st.info("선택된 날짜 범위에 해당하는 데이터가 없습니다.")

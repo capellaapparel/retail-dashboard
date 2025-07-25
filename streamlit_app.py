@@ -156,15 +156,7 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
 
     df_sales.columns = df_sales.columns.str.strip()
     # robust 날짜 파싱
-    df_sales["Order Date"] = pd.to_datetime(
-        df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True
-    )
-    df_sales = df_sales.dropna(subset=["Order Date"])
-
-    min_date, max_date = df_sales["Order Date"].dt.date.min(), df_sales["Order Date"].dt.date.max()
-    st.caption(f"데이터가 존재하는 날짜 범위는 {min_date} ~ {max_date} 입니다.")
-
-    st.write("원본 Order Processed On 10줄:", df_sales["Order Processed On"].head(10))
+    
 df_sales["Order Date"] = pd.to_datetime(
     df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True
 )

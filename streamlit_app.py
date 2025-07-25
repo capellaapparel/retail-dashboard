@@ -45,30 +45,52 @@ def get_latest_shein_price(df_sales, product_number):
     return None
 
 def get_latest_temu_price(df_temu, product_number):
-    # 스타일번호만 추출 (contribution sku의 - 앞부분)
-    df_temu = df_temu.copy()
-    df_temu["temu_style"] = df_temu["contribution sku"].apply(
-        lambda x: str(x).split('-')[0].strip().upper() if pd.notna(x) else ""
-    )
-    # 상태 Cancelled 아닌 것만
+    # 컬럼명 소문자화 및 공백제거 (혹시라도 컬럼명이 살짝 다를 경우도 대비)
+    df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
+    style_col = "contribution sku"
+    status_col = "order item status"
+    date_col = "purchase date"
+    price_col = "base price total"
+    
+    # 모든 텍스트 컬럼 공백·대소문자 정리
+    df_temu[style_col] = df_temu[style_col].astype(str).str.strip().str.upper()
+    df_temu[status_col] = df_temu[status_col].astype(str).str.strip().str.lower()
+    df_temu[date_col] = df_temu[date_col].astype(str).str.strip()
+    
+    # Product Number도 깔끔하게
+    product_number = str(product_number).strip().upper()
+    
+    # TEMU contribution sku에서 스타일넘버만 추출
+    df_temu["temu_style"] = df_temu[style_col].str.split("-").str[0].str.strip().str.upper()
+
+    # **디버그: 스타일넘버 매칭 샘플 출력**
+    st.write("TEMU 전체 스타일넘버 5개:", df_temu["temu_style"].head())
+    st.write("찾는 Product Number:", product_number)
+
+    # Cancelled 제외, 매칭만
     filtered = df_temu[
-        (df_temu["temu_style"] == str(product_number).upper()) &
-        (df_temu["order item status"].str.lower() != "cancelled")
+        (df_temu["temu_style"] == product_number) &
+        (df_temu[status_col] != "cancelled")
     ]
+    # **디버그: 필터된 데이터**
+    st.write("TEMU 필터결과:", filtered[[style_col, "temu_style", price_col, date_col]].head(5))
+
     if not filtered.empty:
-        filtered["Order Date"] = pd.to_datetime(filtered["purchase date"], errors="coerce")
+        filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
-            price = latest.get("base price total")
+            price = latest.get(price_col)
             if isinstance(price, str):
                 price = price.replace("$", "").replace(",", "")
             try:
                 price = float(price)
                 return f"${price:.2f}"
-            except:
+            except Exception as ex:
+                st.write("가격 변환 에러:", price, ex)
                 return None
     return None
+
 
 def show_info_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() != "":

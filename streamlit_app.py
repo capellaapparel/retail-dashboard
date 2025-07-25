@@ -175,8 +175,9 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
         key="shein_sales_date_range"
     )
 
-    st.write("Order Date 샘플:", df_sales["Order Date"].head())
-    st.write("선택한 date_range:", date_range)
+    st.write("Order Date 샘플 as list:", list(df_sales["Order Date"].head(10)))
+    st.write(df_sales.info())
+    st.write(df_sales.head(10))
 
     if isinstance(date_range, list) and len(date_range) == 2:
         start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])

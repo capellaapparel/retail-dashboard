@@ -52,45 +52,52 @@ def get_latest_shein_price(df_sales, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
-    # 컬럼명 모두 소문자+strip, 일치하는 컬럼 찾기
-    col_map = {c.strip().lower(): c for c in df_temu.columns}
-    style_col = col_map.get("contribution sku")
-    status_col = col_map.get("order item status")
-    date_col = col_map.get("purchase date")
-    price_col = col_map.get("base price total")
-    if not all([style_col, status_col, date_col, price_col]):
-        return "NA"
-
-    # 모든 문자열, NaN 방지
+    # 컬럼명 정규화
     df_temu = df_temu.copy()
-    df_temu[style_col] = df_temu[style_col].astype(str).fillna("").str.strip().str.upper()
-    df_temu["temu_style"] = df_temu[style_col].str.split("-").str[0].str.strip().str.upper()
-    df_temu[status_col] = df_temu[status_col].astype(str).fillna("").str.strip().str.lower()
-
+    df_temu.columns = df_temu.columns.str.strip().str.lower()
+    # SKU 관련 컬럼 자동 탐색
+    sku_cols = [c for c in df_temu.columns if 'sku' in c]
+    style_col = None
+    for c in sku_cols:
+        if df_temu[c].astype(str).str.contains('-').any():
+            style_col = c
+            break
+    if style_col is None:
+        return "NA"
+    # 스타일넘버 추출
+    df_temu["temu_style"] = df_temu[style_col].astype(str).str.split("-").str[0].str.strip().str.upper()
     product_number = str(product_number).strip().upper()
-
-    filtered = df_temu[
-        (df_temu["temu_style"] == product_number) &
-        (df_temu[status_col] != "cancelled")
-    ]
-
-    # --- 디버깅 ---
-    # st.write("TEMU 스타일넘버 필터 결과:", filtered[[style_col, "temu_style", price_col, date_col]])
-
-    if not filtered.empty:
+    # 상태 컬럼 (캔슬 제외)
+    status_col = [c for c in df_temu.columns if "status" in c and "order item" in c]
+    status_col = status_col[0] if status_col else None
+    if status_col:
+        df_temu[status_col] = df_temu[status_col].astype(str).str.strip().str.lower()
+        filtered = df_temu[
+            (df_temu["temu_style"] == product_number) &
+            (df_temu[status_col] != "cancelled")
+        ]
+    else:
+        filtered = df_temu[df_temu["temu_style"] == product_number]
+    # 날짜/가격
+    date_col = [c for c in df_temu.columns if "purchase date" in c]
+    price_col = [c for c in df_temu.columns if "base price total" in c]
+    date_col = date_col[0] if date_col else None
+    price_col = price_col[0] if price_col else None
+    if not filtered.empty and date_col and price_col:
         filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
             price = latest.get(price_col)
             if isinstance(price, str):
-                price = price.replace("$", "").replace(",", "").strip()
+                price = price.replace("$", "").replace(",", "")
             try:
                 price = float(price)
                 return f"${price:.2f}" if price > 0 else "NA"
             except:
                 return "NA"
     return "NA"
+
 
 def show_info_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() != "":

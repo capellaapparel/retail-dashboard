@@ -3,16 +3,17 @@ import pandas as pd
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import re
 
-# --- 구글시트 시트명 변경 ---
+# --- 구글시트 시트명 ---
 PRODUCT_SHEET = "PRODUCT_INFO"
 SHEIN_SHEET = "SHEIN_SALES"
 TEMU_SHEET = "TEMU_SALES"
 IMAGE_CSV = "product_images.csv"
-
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
+
 st.set_page_config(page_title="Capella Product Dashboard", layout="wide")
-page = st.sidebar.radio("페이지 선택", ["📖 스타일 정보 조회", "📊 세일즈 데이터 분석"])
+page = st.sidebar.radio("페이지 선택", ["📖 스타일 정보 조회"])
 
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name):
@@ -33,8 +34,10 @@ def load_google_sheet(sheet_name):
 def load_images():
     return pd.read_csv(IMAGE_CSV)
 
-def get_latest_shein_price(df_sales, style_num):
-    filtered = df_sales[df_sales["Product Description"].astype(str).str.strip() == style_num]
+# ---- 가격 가져오기 함수 (정확한 Product Number 매칭만!) ----
+def get_latest_shein_price(df_sales, product_number):
+    # 정확하게 Product Number와만 매칭
+    filtered = df_sales[df_sales["Product Description"].astype(str).str.strip().str.upper() == str(product_number).upper()]
     if not filtered.empty:
         filtered = filtered.copy()
         filtered["Order Date"] = pd.to_datetime(filtered["Order Processed On"], errors="coerce")
@@ -44,49 +47,45 @@ def get_latest_shein_price(df_sales, style_num):
             return latest["Product Price"]
     return None
 
-import re
-
-def get_latest_temu_price(df_temu, style_num):
-    import re
+def get_latest_temu_price(df_temu, product_number):
+    # TEMU contribution sku에서 스타일넘버 추출
     df_temu = df_temu.rename(columns={c.lower().strip(): c for c in df_temu.columns})  # 대소문자 무시 및 공백제거
     style_col = "contribution sku"
     status_col = "order item status"
     date_col = "purchase date"
     price_col = "base price total"
 
-    style_num = str(style_num).strip().upper()
+    # contribution sku 예: BP3365-BLACK-L → Product Number는 BP3365 처럼
     df_temu["스타일넘버"] = df_temu[style_col].apply(
         lambda x: re.split(r'[-_]', str(x).strip().upper())[0] if pd.notna(x) else "")
 
+    # Product Number만 완전히 일치하는 것만 사용 (ex: BP3365만)
     filtered = df_temu[
-        (df_temu["스타일넘버"].str.contains(style_num, na=False)) &
+        (df_temu["스타일넘버"] == str(product_number).upper()) &
         (df_temu[status_col].str.lower() != "cancelled")
     ]
-    st.write("TEMU filtered 샘플:", filtered[["스타일넘버", price_col, date_col]].head(3))  # 임시 디버깅
 
     if not filtered.empty and date_col in filtered.columns:
         filtered = filtered.copy()
-        filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce", infer_datetime_format=True)
+        filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
             price = latest.get(price_col)
             if isinstance(price, str):
-                price = price.replace("$", "").replace(",", "").strip()
+                price = price.replace("$", "").replace(",", "")
             try:
                 price = float(price)
                 return f"${price:.2f}"
-            except Exception as ex:
-                st.write("TEMU 가격 변환 오류", ex, price)
+            except:
                 return None
     return None
 
-
 def show_info_block(label, value):
-    if value not in ("", None, float("nan")):
+    if value not in ("", None, float("nan")) and str(value).strip() != "":
         st.markdown(f"**{label}:** {value}")
 
-# --- 스타일 정보 조회 ---
+# --- 스타일 정보 조회 페이지 ---
 if page == "📖 스타일 정보 조회":
     try:
         df_info = load_google_sheet(PRODUCT_SHEET)
@@ -98,6 +97,7 @@ if page == "📖 스타일 정보 조회":
         st.stop()
 
     style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
+    # ex: 3365 입력하면 BP3365, BP3365X, BTP3365 등 모두 결과에 포함
     if style_input:
         matched = df_info[df_info["Product Number"].astype(str).str.contains(style_input, case=False, na=False)]
         if matched.empty:
@@ -110,7 +110,6 @@ if page == "📖 스타일 정보 조회":
 
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
-
             with col1:
                 if image_url:
                     st.image(image_url, width=300)
@@ -121,12 +120,12 @@ if page == "📖 스타일 정보 조회":
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['Product Number']}")
                 show_info_block("ERP PRICE", row.get("ERP PRICE", ""))
-                # 최신 가격 동적 표시
+                # 가격: 정확한 Product Number와만 매칭!
                 latest_shein = get_latest_shein_price(df_shein, selected)
                 latest_temu = get_latest_temu_price(df_temu, selected)
-                if latest_shein:
+                if latest_shein is not None and str(latest_shein).strip() != "":
                     st.markdown(f"**SHEIN PRICE:** ${latest_shein}")
-                if latest_temu:
+                if latest_temu is not None and str(latest_temu).strip() != "":
                     st.markdown(f"**TEMU PRICE:** {latest_temu}")
                 # 빈 정보 자동 생략
                 for col, label in [
@@ -182,4 +181,3 @@ if page == "📖 스타일 정보 조회":
             else:
                 st.caption("사이즈 정보가 없습니다.")
 
-# (세일즈 분석/추가 기능 필요시 이 아래에 이어서 구현)

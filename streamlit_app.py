@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import json
 import gspread
-import re
 from oauth2client.service_account import ServiceAccountCredentials
 
 # --- 구글시트 시트명 변경 ---
@@ -48,6 +47,7 @@ def get_latest_shein_price(df_sales, style_num):
 import re
 
 def get_latest_temu_price(df_temu, style_num):
+    # 컬럼 소문자화 및 공백제거
     df_temu = df_temu.rename(columns={c: c.lower().strip() for c in df_temu.columns})
     style_col = "contribution sku"
     status_col = "order item status"
@@ -59,11 +59,14 @@ def get_latest_temu_price(df_temu, style_num):
     df_temu["스타일넘버"] = df_temu[style_col].apply(
         lambda x: re.split(r'[-_]', str(x).strip().upper())[0] if pd.notna(x) else "")
 
-    # "포함" or "정규표현식"으로 유연하게 비교
+    # style_num이 TEMU 스타일넘버의 끝부분/일부에라도 "포함"되면 매칭
     filtered = df_temu[
         (df_temu["스타일넘버"].str.contains(style_num, na=False)) &
         (df_temu[status_col].str.lower() != "cancelled")
     ]
+
+    # st.write("TEMU DEBUG", style_num, filtered[["스타일넘버", price_col, date_col]].head(2))  # 디버깅용
+
     if not filtered.empty and date_col in filtered.columns:
         filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce", infer_datetime_format=True)
         filtered = filtered.dropna(subset=["Order Date"])
@@ -78,6 +81,7 @@ def get_latest_temu_price(df_temu, style_num):
             except:
                 return None
     return None
+
 
 
 def show_info_block(label, value):

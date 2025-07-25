@@ -49,7 +49,6 @@ def get_latest_shein_price(df_sales, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
-    # 컬럼명 소문자화 및 공백제거
     df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
     style_col = "contribution sku"
     status_col = "order item status"
@@ -57,31 +56,31 @@ def get_latest_temu_price(df_temu, product_number):
     price_col = "base price total"
     if style_col not in df_temu.columns or status_col not in df_temu.columns:
         return "NA"
-    # contribution sku에서 '-' 앞까지가 스타일 넘버!
     df_temu["temu_style"] = df_temu[style_col].astype(str).apply(lambda x: str(x).split('-')[0].strip().upper())
     product_number = str(product_number).strip().upper()
     df_temu[status_col] = df_temu[status_col].astype(str).str.strip().str.lower()
     df_temu[date_col] = df_temu[date_col].astype(str).str.strip()
-
-    # 필터: Product Number와 정확히 일치, Cancelled/취소 제외
     filtered = df_temu[(df_temu["temu_style"] == product_number) & (df_temu[status_col] != "cancelled")]
-    st.write("TEMU PRICE Filtered rows:", filtered.shape[0])   # <== (디버깅) 필터된 행 수
+
+    st.write("TEMU PRICE Filtered rows:", filtered.shape[0])
     if not filtered.empty:
+        st.write("Filtered base price total/row:", filtered[[price_col, date_col]])
         filtered = filtered.copy()
         filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
             price = latest.get(price_col)
-            st.write("----TEMU PRICE RAW VALUE:", price)    # << 디버깅!
+            st.write("TEMU PRICE RAW VALUE:", price)  # 디버깅
             try:
-                price_float = float(str(price).replace("$", "").replace(",", ""))
-                st.write("----TEMU PRICE float VALUE:", price_float)
-                return f"${price_float:.2f}"
+                price = float(str(price).replace("$", "").replace(",", ""))
+                st.write("TEMU PRICE FLOAT VALUE:", price)
+                return f"${price:.2f}"
             except Exception as ex:
-                st.write("----TEMU 가격 변환 에러:", price, ex)
+                st.write("TEMU 가격 변환 에러:", price, ex)
                 return "NA"
     return "NA"
+
 
 
 def show_info_block(label, value):

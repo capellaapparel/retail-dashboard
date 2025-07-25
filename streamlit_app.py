@@ -11,7 +11,11 @@ IMAGE_CSV = "product_images.csv"
 st.set_page_config(page_title="Capella Product Dashboard", layout="wide")
 
 # Sidebar Navigation
-page = st.sidebar.radio("페이지 선택", ["📖 스타일 정보 조회", "📊 세일즈 데이터 분석 (Shein)"])
+page = st.sidebar.radio("페이지 선택", [
+    "📖 스타일 정보 조회", 
+    "📊 세일즈 데이터 분석",
+    "가격 제안"
+])
 
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name):

@@ -78,8 +78,11 @@ def get_latest_temu_price(df_temu, product_number):
             st.write("====최신 TEMU row:", latest)
             st.write("====최신 TEMU price 값:", price, type(price))
             try:
-                if price is None or str(price).strip() == "":
+                # None 또는 빈값 예외처리
+                if price is None or (isinstance(price, str) and price.strip() == ""):
                     return "NA"
+                if isinstance(price, (float, int)):
+                    return f"${price:.2f}"
                 price_str = str(price).replace("$", "").replace(",", "").strip()
                 price_f = float(price_str)
                 return f"${price_f:.2f}"
@@ -87,7 +90,6 @@ def get_latest_temu_price(df_temu, product_number):
                 st.write("====TEMU 가격 변환 에러:", price, ex)
                 return "NA"
     return "NA"
-
 
 
 

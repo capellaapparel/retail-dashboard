@@ -162,6 +162,7 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
     st.write("df_info 컬럼명:", df_info.columns.tolist())
     st.write("df_sales['Product Description'] 샘플:", df_sales["Product Description"].head(10))
     st.write("df_info['Product Number'] 샘플:", df_info["Product Number"].head(10))
+    st.write(df_sales["Product Description"].head(20))
 
     # robust 날짜 파싱
     df_sales["Order Date"] = pd.to_datetime(df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True)

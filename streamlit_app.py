@@ -146,7 +146,6 @@ if page == "📖 스타일 정보 조회":
                 st.caption("사이즈 정보가 없습니다.")
 
 if page == "📊 세일즈 데이터 분석 (Shein)":
-    
     try:
         df_info = load_google_sheet("Sheet1")
         df_sales = load_google_sheet("Sheet2")
@@ -155,25 +154,20 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
         st.error("❌ 데이터 로드 실패: " + str(e))
         st.stop()
 
-     date_range = st.date_input(
-        "📅 날짜 범위 선택",
-        [min_date, max_date],
-        format="YYYY-MM-DD",
-        key="shein_sales_date_range"
-    )
-
     df_sales.columns = df_sales.columns.str.strip()
     # robust 날짜 파싱
-    
-df_sales["Order Date"] = pd.to_datetime(
-    df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True
-)
-st.write("파싱 후 Order Date 10줄:", df_sales["Order Date"].head(10))
-st.write("파싱 후 전체 row 수:", len(df_sales))
-df_sales = df_sales.dropna(subset=["Order Date"])
-st.write("dropna 이후 row 수:", len(df_sales))
+    st.write("원본 Order Processed On 10줄:", df_sales["Order Processed On"].head(10))
+    df_sales["Order Date"] = pd.to_datetime(
+        df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True
+    )
+    st.write("파싱 후 Order Date 10줄:", df_sales["Order Date"].head(10))
+    st.write("파싱 후 전체 row 수:", len(df_sales))
+    df_sales = df_sales.dropna(subset=["Order Date"])
+    st.write("dropna 이후 row 수:", len(df_sales))
 
-    # key 지정해서 중복 방지!
+    min_date, max_date = df_sales["Order Date"].dt.date.min(), df_sales["Order Date"].dt.date.max()
+    st.caption(f"데이터가 존재하는 날짜 범위는 {min_date} ~ {max_date} 입니다.")
+
     date_range = st.date_input(
         "📅 날짜 범위 선택",
         [min_date, max_date],
@@ -181,15 +175,16 @@ st.write("dropna 이후 row 수:", len(df_sales))
         key="shein_sales_date_range"
     )
 
-    # 디버깅용 출력(문제 추적 시만 사용, 완성 후 주석 처리 가능)
     st.write("Order Date 샘플:", df_sales["Order Date"].head())
     st.write("선택한 date_range:", date_range)
 
     if isinstance(date_range, list) and len(date_range) == 2:
         start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+        compare = df_sales["Order Date"].dt.date
+        st.write("Order Date 첫 10개(date):", compare.head(10))
         df_sales_filtered = df_sales[
-            (df_sales["Order Date"].dt.date >= start.date()) &
-            (df_sales["Order Date"].dt.date <= end.date())
+            (compare >= start.date()) &
+            (compare <= end.date())
         ]
         st.write("필터된 row 수:", len(df_sales_filtered))
         st.write("필터 샘플:", df_sales_filtered.head())
@@ -256,3 +251,4 @@ st.write("dropna 이후 row 수:", len(df_sales))
                          use_container_width=True)
         except KeyError as ke:
             st.warning(f"⚠️ 데이터 누락으로 인상 제안 테이블 생성 불가: {ke}")
+

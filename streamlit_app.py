@@ -52,38 +52,26 @@ def get_latest_shein_price(df_sales, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
-    # 컬럼명 정규화
-    df_temu = df_temu.copy()
-    df_temu.columns = df_temu.columns.str.strip().str.lower()
-    # SKU 관련 컬럼 자동 탐색
-    sku_cols = [c for c in df_temu.columns if 'sku' in c]
-    style_col = None
-    for c in sku_cols:
-        if df_temu[c].astype(str).str.contains('-').any():
-            style_col = c
-            break
+    # 컬럼명 통일
+    df = df_temu.copy()
+    df.columns = df.columns.str.lower().str.strip()
+    # contribution sku 자동 감지
+    sku_cols = [c for c in df.columns if 'contribution sku' in c or (c.startswith('sku') and '-' in str(df.iloc[0][c]))]
+    style_col = sku_cols[0] if sku_cols else None
     if style_col is None:
         return "NA"
     # 스타일넘버 추출
-    df_temu["temu_style"] = df_temu[style_col].astype(str).str.split("-").str[0].str.strip().str.upper()
+    df["temu_style"] = df[style_col].astype(str).str.split("-").str[0].str.strip().str.upper()
     product_number = str(product_number).strip().upper()
-    # 상태 컬럼 (캔슬 제외)
-    status_col = [c for c in df_temu.columns if "status" in c and "order item" in c]
-    status_col = status_col[0] if status_col else None
-    if status_col:
-        df_temu[status_col] = df_temu[status_col].astype(str).str.strip().str.lower()
-        filtered = df_temu[
-            (df_temu["temu_style"] == product_number) &
-            (df_temu[status_col] != "cancelled")
-        ]
-    else:
-        filtered = df_temu[df_temu["temu_style"] == product_number]
+    # 오더 상태 컬럼
+    status_col = [c for c in df.columns if "order item status" in c][0]
+    # 필터: 정확히 Product Number 일치 + Cancelled 제외
+    df[status_col] = df[status_col].astype(str).str.strip().str.lower()
+    filtered = df[(df["temu_style"] == product_number) & (df[status_col] != "cancelled")]
     # 날짜/가격
-    date_col = [c for c in df_temu.columns if "purchase date" in c]
-    price_col = [c for c in df_temu.columns if "base price total" in c]
-    date_col = date_col[0] if date_col else None
-    price_col = price_col[0] if price_col else None
-    if not filtered.empty and date_col and price_col:
+    date_col = [c for c in df.columns if "purchase date" in c][0]
+    price_col = [c for c in df.columns if "base price total" in c][0]
+    if not filtered.empty:
         filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
@@ -141,7 +129,7 @@ if page == "📖 스타일 정보 조회":
                 shein_display = get_latest_shein_price(df_shein, selected)
                 temu_display = get_latest_temu_price(df_temu, selected)
                 st.markdown(f"**SHEIN PRICE:** {shein_display}")
-                st.markdown(f"**TEMU PRICE:** {temu_display}")
+                st.markdown(f"**TEMU PRICE:** {latest_temu}")
                 # 스타일 속성들 빈값만 생략
                 for col, label in [
                     ("SLEEVE", "SLEEVE"), ("NECKLINE", "NECKLINE"), ("LENGTH", "LENGTH"),

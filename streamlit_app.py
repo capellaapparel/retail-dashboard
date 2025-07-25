@@ -178,14 +178,21 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
 
     # 날짜 필터 적용
     if isinstance(date_range, list) and len(date_range) == 2:
-        start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
-        compare = df_sales["Order Date"].dt.date
-        df_sales_filtered = df_sales[
-            (compare >= start.date()) &
-            (compare <= end.date())
-        ]
-    else:
-        df_sales_filtered = pd.DataFrame()
+    start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+    compare = df_sales["Order Date"].dt.date
+    st.write(f"start: {start}, end: {end}")
+    st.write("compare[:20]:", compare[:20].tolist())
+    st.write("Order Date full sample:", df_sales["Order Date"][:20])
+    st.write("Product Description sample:", df_sales["Product Description"][:20])
+    # 추가로 실제로 필터 통과하는 row 하나라도 있는지 체크
+    mask = (compare >= start.date()) & (compare <= end.date())
+    st.write("mask[:20]:", mask[:20].tolist())
+    st.write("mask.sum():", mask.sum())
+    if mask.sum() > 0:
+        st.write("실제로 통과하는 row:", df_sales[mask].head())
+    df_sales_filtered = df_sales[mask]
+else:
+    df_sales_filtered = pd.DataFrame()
 
     if df_sales_filtered.empty:
         st.info("선택된 날짜 범위에 해당하는 데이터가 없습니다.")

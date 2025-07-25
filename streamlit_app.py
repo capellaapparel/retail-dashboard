@@ -47,8 +47,8 @@ def get_latest_shein_price(df_sales, style_num):
 import re
 
 def get_latest_temu_price(df_temu, style_num):
-    # 컬럼 소문자화 및 공백제거
-    df_temu = df_temu.rename(columns={c: c.lower().strip() for c in df_temu.columns})
+    import re
+    df_temu = df_temu.rename(columns={c.lower().strip(): c for c in df_temu.columns})  # 대소문자 무시 및 공백제거
     style_col = "contribution sku"
     status_col = "order item status"
     date_col = "purchase date"
@@ -59,29 +59,31 @@ def get_latest_temu_price(df_temu, style_num):
     df_temu["스타일넘버"] = df_temu[style_col].apply(
         lambda x: re.split(r'[-_]', str(x).strip().upper())[0] if pd.notna(x) else "")
 
-    # style_num이 TEMU 스타일넘버의 끝부분/일부에라도 "포함"되면 매칭
+    # st.write("TEMU DEBUG", style_num, df_temu[["스타일넘버", price_col, date_col]].head(3))  # 임시 디버깅
+
     filtered = df_temu[
         (df_temu["스타일넘버"].str.contains(style_num, na=False)) &
         (df_temu[status_col].str.lower() != "cancelled")
     ]
-
-    # st.write("TEMU DEBUG", style_num, filtered[["스타일넘버", price_col, date_col]].head(2))  # 디버깅용
+    st.write("TEMU filtered 샘플:", filtered[["스타일넘버", price_col, date_col]].head(3))  # 임시 디버깅
 
     if not filtered.empty and date_col in filtered.columns:
-        filtered["Order Date"] = pd.to_datetime(filtered["purchase date"], errors="coerce")
+        filtered = filtered.copy()
+        filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
             price = latest.get(price_col)
+            st.write("TEMU 최신 row", latest)
             if isinstance(price, str):
                 price = price.replace("$", "").replace(",", "")
             try:
                 price = float(price)
                 return f"${price:.2f}"
-            except:
+            except Exception as ex:
+                st.write("TEMU 가격 변환 오류", ex, price)
                 return None
     return None
-
 
 
 def show_info_block(label, value):

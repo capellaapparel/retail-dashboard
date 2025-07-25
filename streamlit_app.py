@@ -127,20 +127,19 @@ if page == "📖 스타일 정보 조회":
                 else:
                     st.caption("이미지 없음")
 
-            with col2:
+                        with col2:
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['Product Number']}")
                 show_info_block("ERP PRICE", row.get("ERP PRICE", ""))
 
                 # 가격: 정확한 Product Number만 매칭!
                 latest_shein = get_latest_shein_price(df_shein, selected)
-latest_temu = get_latest_temu_price(df_temu, selected)
+                latest_temu = get_latest_temu_price(df_temu, selected)
 
-if latest_shein is not None:
-    st.markdown(f"**SHEIN PRICE:** ${latest_shein}")
+                if latest_shein is not None:
+                    st.markdown(f"**SHEIN PRICE:** ${latest_shein}")
 
-st.markdown(f"**TEMU PRICE:** {latest_temu}")  # 항상 출력!
-
+                st.markdown(f"**TEMU PRICE:** {latest_temu}")
 
                 # 빈 정보 자동 생략
                 for col, label in [
@@ -151,6 +150,7 @@ st.markdown(f"**TEMU PRICE:** {latest_temu}")  # 항상 출력!
                     val = row.get(col, "")
                     if pd.notna(val) and str(val).strip() not in ("", "nan", "NaN"):
                         st.markdown(f"**{label}:** {val}")
+
 
             st.markdown("---")
             st.subheader("📏 Size Chart")

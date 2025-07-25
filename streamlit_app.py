@@ -99,7 +99,7 @@ if page == "📖 스타일 정보 조회":
         st.error("❌ 데이터 로드 실패: " + str(e))
         st.stop()
 
-    style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
+style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
     if style_input:
         matched = df_info[df_info["Product Number"].astype(str).str.contains(style_input, case=False, na=False)]
         if matched.empty:
@@ -109,6 +109,16 @@ if page == "📖 스타일 정보 조회":
             row = df_info[df_info["Product Number"] == selected].iloc[0]
             img_row = df_img[df_img["Product Number"] == selected]
             image_url = img_row.iloc[0]["First Image"] if not img_row.empty else None
+
+            # ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+            # 디버깅: TEMU_SKU 필터링 확인
+            df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
+            style_col = "contribution sku"
+            df_temu["temu_style"] = df_temu[style_col].astype(str).str.split("-").str[0].str.strip().str.upper()
+            st.write("TEMU 전체 SKU/STYLE(10줄)", df_temu[[style_col, "temu_style"]].head(10))
+            st.write("선택된 스타일:", selected)
+            st.write("TEMU 매칭 row:", df_temu[df_temu["temu_style"] == selected].head(5))
+            # ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
             st.markdown("---")
             col1, col2 = st.columns([1, 2])

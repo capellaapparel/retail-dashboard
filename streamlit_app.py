@@ -52,23 +52,21 @@ def get_latest_shein_price(df_sales, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
-    # 컬럼명 통일
-    df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
-    style_col = "contribution sku"
-    status_col = "order item status"
-    date_col = "purchase date"
-    price_col = "base price total"
-
-    # 컬럼 존재 체크
-    if not all(c in df_temu.columns for c in [style_col, status_col, date_col, price_col]):
+    # 컬럼명 모두 소문자+strip, 일치하는 컬럼 찾기
+    col_map = {c.strip().lower(): c for c in df_temu.columns}
+    style_col = col_map.get("contribution sku")
+    status_col = col_map.get("order item status")
+    date_col = col_map.get("purchase date")
+    price_col = col_map.get("base price total")
+    if not all([style_col, status_col, date_col, price_col]):
         return "NA"
 
-    # 스타일넘버 추출
-    df_temu[style_col] = df_temu[style_col].astype(str).str.strip().str.upper()
+    # 모든 문자열, NaN 방지
+    df_temu = df_temu.copy()
+    df_temu[style_col] = df_temu[style_col].astype(str).fillna("").str.strip().str.upper()
     df_temu["temu_style"] = df_temu[style_col].str.split("-").str[0].str.strip().str.upper()
-    df_temu[status_col] = df_temu[status_col].astype(str).str.strip().str.lower()
+    df_temu[status_col] = df_temu[status_col].astype(str).fillna("").str.strip().str.lower()
 
-    # 입력 넘버도 정제
     product_number = str(product_number).strip().upper()
 
     filtered = df_temu[
@@ -76,15 +74,17 @@ def get_latest_temu_price(df_temu, product_number):
         (df_temu[status_col] != "cancelled")
     ]
 
+    # --- 디버깅 ---
+    # st.write("TEMU 스타일넘버 필터 결과:", filtered[[style_col, "temu_style", price_col, date_col]])
+
     if not filtered.empty:
-        filtered = filtered.copy()
         filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
             price = latest.get(price_col)
             if isinstance(price, str):
-                price = price.replace("$", "").replace(",", "")
+                price = price.replace("$", "").replace(",", "").strip()
             try:
                 price = float(price)
                 return f"${price:.2f}" if price > 0 else "NA"

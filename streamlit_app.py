@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import json
 import gspread
+import re
 from oauth2client.service_account import ServiceAccountCredentials
 
 # --- 구글시트 시트명 변경 ---
@@ -44,6 +45,8 @@ def get_latest_shein_price(df_sales, style_num):
             return latest["Product Price"]
     return None
 
+import re
+
 def get_latest_temu_price(df_temu, style_num):
     df_temu = df_temu.rename(columns={c: c.lower().strip() for c in df_temu.columns})
     style_col = "contribution sku"
@@ -51,11 +54,16 @@ def get_latest_temu_price(df_temu, style_num):
     date_col = "purchase date"
     price_col = "base price total"
 
-    # 모두 대문자/strip으로 통일 비교
-    df_temu["스타일넘버"] = df_temu[style_col].apply(lambda x: str(x).split('-')[0].strip().upper() if pd.notna(x) else "")
-    style_num = style_num.strip().upper()
+    style_num = str(style_num).strip().upper()
+    # TEMU contribution sku에서 스타일넘버 추출
+    df_temu["스타일넘버"] = df_temu[style_col].apply(
+        lambda x: re.split(r'[-_]', str(x).strip().upper())[0] if pd.notna(x) else "")
 
-    filtered = df_temu[(df_temu["스타일넘버"] == style_num) & (df_temu[status_col].str.lower() != "cancelled")]
+    # "포함" or "정규표현식"으로 유연하게 비교
+    filtered = df_temu[
+        (df_temu["스타일넘버"].str.contains(style_num, na=False)) &
+        (df_temu[status_col].str.lower() != "cancelled")
+    ]
     if not filtered.empty and date_col in filtered.columns:
         filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce", infer_datetime_format=True)
         filtered = filtered.dropna(subset=["Order Date"])
@@ -70,6 +78,7 @@ def get_latest_temu_price(df_temu, style_num):
             except:
                 return None
     return None
+
 
 def show_info_block(label, value):
     if value not in ("", None, float("nan")):

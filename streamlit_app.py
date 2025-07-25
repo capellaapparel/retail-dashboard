@@ -146,6 +146,7 @@ if page == "📖 스타일 정보 조회":
                 st.caption("사이즈 정보가 없습니다.")
 
 if page == "📊 세일즈 데이터 분석 (Shein)":
+    
     try:
         df_info = load_google_sheet("Sheet1")
         df_sales = load_google_sheet("Sheet2")
@@ -153,6 +154,13 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
     except Exception as e:
         st.error("❌ 데이터 로드 실패: " + str(e))
         st.stop()
+
+     date_range = st.date_input(
+        "📅 날짜 범위 선택",
+        [min_date, max_date],
+        format="YYYY-MM-DD",
+        key="shein_sales_date_range"
+    )
 
     df_sales.columns = df_sales.columns.str.strip()
     # robust 날짜 파싱

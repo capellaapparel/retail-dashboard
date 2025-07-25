@@ -65,31 +65,31 @@ def get_latest_temu_price(df_temu, product_number):
     df_temu[date_col] = df_temu[date_col].astype(str).str.strip()
 
     filtered = df_temu[(df_temu["temu_style"] == product_number) & (df_temu[status_col] != "cancelled")]
-    st.write("====TEMU 필터 rows 수:", len(filtered))
-    st.write("====TEMU 필터 rows 샘플:", filtered[[style_col, "temu_style", price_col, date_col]].head(10))
+    filtered = filtered.copy()
+    filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
+    filtered = filtered.dropna(subset=["Order Date"])
+    filtered = filtered.sort_values("Order Date", ascending=False)
 
-    if not filtered.empty:
-        filtered = filtered.copy()
-        filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
-        filtered = filtered.dropna(subset=["Order Date"])
-        if not filtered.empty:
-            latest = filtered.sort_values("Order Date").iloc[-1]
-            price = latest.get(price_col)
-            st.write("====최신 TEMU row:", latest)
-            st.write("====최신 TEMU price 값:", price, type(price))
-            try:
-                # None 또는 빈값 예외처리
-                if price is None or (isinstance(price, str) and price.strip() == ""):
-                    return "NA"
-                if isinstance(price, (float, int)):
-                    return f"${price:.2f}"
-                price_str = str(price).replace("$", "").replace(",", "").strip()
+    # **추가: 유효 가격 있는 첫 row만 추출**
+    for idx, row in filtered.iterrows():
+        price = row.get(price_col)
+        if price is None:
+            continue
+        try:
+            if isinstance(price, str):
+                price_str = price.replace("$", "").replace(",", "").strip()
+                if price_str == "" or price_str.lower() == "na":
+                    continue
                 price_f = float(price_str)
-                return f"${price_f:.2f}"
-            except Exception as ex:
-                st.write("====TEMU 가격 변환 에러:", price, ex)
-                return "NA"
+            else:
+                if pd.isna(price):
+                    continue
+                price_f = float(price)
+            return f"${price_f:.2f}"
+        except Exception as ex:
+            continue
     return "NA"
+
 
 
 

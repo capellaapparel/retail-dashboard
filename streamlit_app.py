@@ -129,7 +129,7 @@ if page == "📖 스타일 정보 조회":
                 latest_temu = get_latest_temu_price(df_temu, selected)
                 if latest_shein is not None and str(latest_shein).strip() != "":
                     st.markdown(f"**SHEIN PRICE:** ${latest_shein}")
-                latest_temu is not None and str(latest_temu).strip() != "":
+                if latest_temu is not None and str(latest_temu).strip() != "":
                     st.markdown(f"**TEMU PRICE:** {latest_temu}")
 
                 # 빈 정보 자동 생략

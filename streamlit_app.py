@@ -51,21 +51,17 @@ def get_latest_temu_price(df_temu, style_num):
     date_col = "purchase date"
     price_col = "base price total"
 
+    # 모두 대문자/strip으로 통일 비교
     df_temu["스타일넘버"] = df_temu[style_col].apply(lambda x: str(x).split('-')[0].strip().upper() if pd.notna(x) else "")
-    style_num = style_num.strip().upper()  # 비교도 대문자, 공백제거로 통일
+    style_num = style_num.strip().upper()
 
     filtered = df_temu[(df_temu["스타일넘버"] == style_num) & (df_temu[status_col].str.lower() != "cancelled")]
-    st.write("TEMU 매칭 row 수:", len(filtered))
-    st.write("TEMU 필터 샘플:", filtered.head(3))  # debug
-
     if not filtered.empty and date_col in filtered.columns:
         filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce", infer_datetime_format=True)
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
             price = latest.get(price_col)
-            st.write("TEMU 최신 row:", latest)
-            st.write("TEMU 최신 price:", price)
             if isinstance(price, str):
                 price = price.replace("$", "").replace(",", "")
             try:

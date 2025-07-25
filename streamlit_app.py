@@ -82,6 +82,8 @@ def get_latest_temu_price(df_temu, product_number):
                 return None
     return None
 
+st.write("TEMU 컬럼명:", df_temu.colums.tolist())
+
 def show_info_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() != "":
         st.markdown(f"**{label}:** {value}")

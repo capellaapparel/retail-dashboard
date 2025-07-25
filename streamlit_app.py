@@ -120,37 +120,38 @@ if page == "📖 스타일 정보 조회":
             image_url = img_row.iloc[0]["First Image"] if not img_row.empty else None
 
             st.markdown("---")
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                if image_url:
-                    st.image(image_url, width=300)
-                else:
-                    st.caption("이미지 없음")
+    col1, col2 = st.columns([1, 2])
 
-                        with col2:
-                st.subheader(row.get("default product name(en)", ""))
-                st.markdown(f"**Product Number:** {row['Product Number']}")
-                show_info_block("ERP PRICE", row.get("ERP PRICE", ""))
+    with col1:
+        if image_url:
+            st.image(image_url, width=300)
+        else:
+            st.caption("이미지 없음")
 
-                # 가격: 정확한 Product Number만 매칭!
-                latest_shein = get_latest_shein_price(df_shein, selected)
-                latest_temu = get_latest_temu_price(df_temu, selected)
+    with col2:
+        st.subheader(row.get("default product name(en)", ""))
+        st.markdown(f"**Product Number:** {row['Product Number']}")
+        show_info_block("ERP PRICE", row.get("ERP PRICE", ""))
 
-                if latest_shein is not None:
-                    st.markdown(f"**SHEIN PRICE:** ${latest_shein}")
+        # 가격: 정확한 Product Number만 매칭!
+        latest_shein = get_latest_shein_price(df_shein, selected)
+        latest_temu = get_latest_temu_price(df_temu, selected)
 
-                st.markdown(f"**TEMU PRICE:** {latest_temu}")
+        if latest_shein is not None:
+            st.markdown(f"**SHEIN PRICE:** ${latest_shein}")
 
-                # 빈 정보 자동 생략
-                for col, label in [
-                    ("SLEEVE", "SLEEVE"), ("NECKLINE", "NECKLINE"), ("LENGTH", "LENGTH"),
-                    ("FIT", "FIT"), ("DETAIL", "DETAIL"), ("STYLE MOOD", "STYLE MOOD"),
-                    ("MODEL", "MODEL"), ("NOTES", "NOTES")
-                ]:
-                    val = row.get(col, "")
-                    if pd.notna(val) and str(val).strip() not in ("", "nan", "NaN"):
-                        st.markdown(f"**{label}:** {val}")
+        if latest_temu is not None and str(latest_temu).strip() != "":
+            st.markdown(f"**TEMU PRICE:** {latest_temu}")
 
+        # 빈 정보 자동 생략
+        for col, label in [
+            ("SLEEVE", "SLEEVE"), ("NECKLINE", "NECKLINE"), ("LENGTH", "LENGTH"),
+            ("FIT", "FIT"), ("DETAIL", "DETAIL"), ("STYLE MOOD", "STYLE MOOD"),
+            ("MODEL", "MODEL"), ("NOTES", "NOTES")
+        ]:
+            val = row.get(col, "")
+            if pd.notna(val) and str(val).strip() not in ("", "nan", "NaN"):
+                st.markdown(f"**{label}:** {val}")
 
             st.markdown("---")
             st.subheader("📏 Size Chart")

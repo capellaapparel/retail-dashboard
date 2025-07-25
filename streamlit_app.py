@@ -161,11 +161,13 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
     )
     df_sales = df_sales.dropna(subset=["Order Date"])
 
-  # --- 날짜 필터 ---
+# 날짜 파싱 (format 인자 제거해도 됨)
+df_sales["Order Date"] = pd.to_datetime(df_sales["Order Processed On"], errors="coerce")
+df_sales = df_sales.dropna(subset=["Order Date"])
+
+# --- 날짜 필터 ---
 min_date, max_date = df_sales["Order Date"].dt.date.min(), df_sales["Order Date"].dt.date.max()
 date_range = st.date_input("📅 날짜 범위 선택", [min_date, max_date], format="YYYY-MM-DD")
-
-df_sales_filtered = pd.DataFrame()
 
 if isinstance(date_range, list) and len(date_range) == 2:
     start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
@@ -173,8 +175,10 @@ if isinstance(date_range, list) and len(date_range) == 2:
         (df_sales["Order Date"].dt.date >= start.date()) &
         (df_sales["Order Date"].dt.date <= end.date())
     ]
+else:
+    df_sales_filtered = pd.DataFrame()
 
-# 결과 분기문: 날짜 필터 always 있음!
+# 결과 분기문
 if df_sales_filtered.empty:
     st.info("선택된 날짜 범위에 해당하는 데이터가 없습니다.")
 else:

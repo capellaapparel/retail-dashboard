@@ -45,35 +45,25 @@ def get_latest_shein_price(df_sales, product_number):
     return None
 
 def get_latest_temu_price(df_temu, product_number):
-    # 컬럼명 체크
     style_col = "contribution sku"
     status_col = "order item status"
     date_col = "purchase date"
     price_col = "base price total"
 
-    # 1. 컬럼 체크 (없으면 안내문)
-    for col in [style_col, status_col, date_col, price_col]:
-        if col not in df_temu.columns:
-            st.warning(f"TEMU_SALES 시트에 '{col}' 컬럼이 없습니다! 실제 컬럼: {list(df_temu.columns)}")
-            return None
-
-    # 2. 스타일넘버 추출
+    # 스타일넘버만 추출: BP3365-BLACK-L → BP3365 (대소문자 무시)
     df_temu = df_temu.copy()
     df_temu["temu_style"] = df_temu[style_col].apply(
-        lambda x: re.split(r'[-_]', str(x).strip().upper())[0] if pd.notna(x) else ""
+        lambda x: str(x).split('-')[0].strip().upper() if pd.notna(x) else ""
     )
 
-    # 정확히 Product Number만 매칭
+    # *** Product Number 정확히 일치만 ***
     filtered = df_temu[
         (df_temu["temu_style"] == str(product_number).upper()) &
         (df_temu[status_col].str.lower() != "cancelled")
     ]
 
-    # 디버깅: 결과 row 수만
-    # st.info(f"TEMU PRICE DEBUG – Product Number: {product_number} / Row: {len(filtered)}")
-
+    # 가장 최근 거래
     if not filtered.empty:
-        filtered = filtered.copy()
         filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:

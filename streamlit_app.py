@@ -61,25 +61,25 @@ def get_latest_temu_price(df_temu, product_number):
     df_temu[status_col] = df_temu[status_col].astype(str).str.strip().str.lower()
     df_temu[date_col] = df_temu[date_col].astype(str).str.strip()
     filtered = df_temu[(df_temu["temu_style"] == product_number) & (df_temu[status_col] != "cancelled")]
-
-    st.write("TEMU PRICE Filtered rows:", filtered.shape[0])
     if not filtered.empty:
-        st.write("Filtered base price total/row:", filtered[[price_col, date_col]])
         filtered = filtered.copy()
         filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
             price = latest.get(price_col)
-            st.write("TEMU PRICE RAW VALUE:", price)  # 디버깅
+            # --- 아래 한 줄만 남기면 됨 ---
             try:
-                price = float(str(price).replace("$", "").replace(",", ""))
-                st.write("TEMU PRICE FLOAT VALUE:", price)
-                return f"${price:.2f}"
+                # 만약 price가 None, ''일 때 대비, $/공백/쉼표 다 삭제
+                if price is None or str(price).strip() == "":
+                    return "NA"
+                price_str = str(price).replace("$", "").replace(",", "").strip()
+                price_f = float(price_str)
+                return f"${price_f:.2f}"
             except Exception as ex:
-                st.write("TEMU 가격 변환 에러:", price, ex)
                 return "NA"
     return "NA"
+
 
 
 

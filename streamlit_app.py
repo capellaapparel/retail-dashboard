@@ -166,6 +166,33 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
 
     date_range = st.date_input("📅 날짜 범위 선택", [min_date, max_date], format="YYYY-MM-DD")
 
+    # robust 날짜 파싱
+df_sales["Order Date"] = pd.to_datetime(df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True)
+df_sales = df_sales.dropna(subset=["Order Date"])
+
+min_date, max_date = df_sales["Order Date"].dt.date.min(), df_sales["Order Date"].dt.date.max()
+st.caption(f"데이터가 존재하는 날짜 범위는 {min_date} ~ {max_date} 입니다.")
+
+date_range = st.date_input("📅 날짜 범위 선택", [min_date, max_date], format="YYYY-MM-DD")
+
+# 디버깅 추가
+st.write("Order Date 샘플 10줄:", df_sales["Order Date"].head(10))
+st.write("선택한 date_range:", date_range)
+if isinstance(date_range, list) and len(date_range) == 2:
+    start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+    st.write("start:", start, "end:", end)
+    compare = df_sales["Order Date"].dt.date
+    st.write("Order Date 첫 10개(date):", compare.head(10))
+    df_sales_filtered = df_sales[
+        (compare >= start.date()) &
+        (compare <= end.date())
+    ]
+    st.write("필터링된 row 수:", len(df_sales_filtered))
+    st.write("필터링된 row 샘플:", df_sales_filtered.head())
+else:
+    df_sales_filtered = pd.DataFrame()
+
+
     if isinstance(date_range, list) and len(date_range) == 2:
         start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
         df_sales_filtered = df_sales[

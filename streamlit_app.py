@@ -48,21 +48,33 @@ def get_latest_shein_price(df_sales, product_number):
     return None
 
 def get_latest_temu_price(df_temu, product_number):
-    import re
     style_col = "contribution sku"
     status_col = "order item status"
     date_col = "purchase date"
     price_col = "base price total"
 
-    # TEMU contribution sku에서 스타일넘버 추출
+    # 1. 컬럼 체크
+    for col in [style_col, status_col, date_col, price_col]:
+        if col not in df_temu.columns:
+            st.warning(f"TEMU_SALES 시트에 '{col}' 컬럼이 없습니다!")
+            st.write("실제 TEMU 컬럼명:", list(df_temu.columns))
+            return None
+
+    # 2. 스타일넘버 추출
     df_temu["temu_style"] = df_temu[style_col].apply(
         lambda x: re.split(r'[-_]', str(x).strip().upper())[0] if pd.notna(x) else ""
     )
 
+    st.write("product_number(선택):", product_number)
+    st.write("temu_style 유니크 샘플:", df_temu["temu_style"].unique()[:10])
+
+    # 3. 필터링
     filtered = df_temu[
         (df_temu["temu_style"] == str(product_number).upper())
         & (df_temu[status_col].str.lower() != "cancelled")
     ]
+    st.write("필터된 TEMU row 수:", len(filtered))
+    st.write(filtered.head(2))
 
     if not filtered.empty:
         filtered = filtered.copy()
@@ -71,12 +83,14 @@ def get_latest_temu_price(df_temu, product_number):
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
             price = latest.get(price_col)
+            st.write("TEMU 최신 row", latest)
             if isinstance(price, str):
                 price = price.replace("$", "").replace(",", "")
             try:
                 price = float(price)
-                return f"${price:.2f}"
-            except:
+                return f"{price:.2f}"
+            except Exception as ex:
+                st.write("TEMU 가격 변환 오류", ex, price)
                 return None
     return None
 
@@ -85,6 +99,7 @@ def show_info_block(label, value):
         st.markdown(f"**{label}:** {value}")
 
 # --- 스타일 정보 조회 페이지 ---
+# 컬럼명 모두 소문자 strip해서 보기 (디버깅용)
 if page == "📖 스타일 정보 조회":
     try:
         df_info = load_google_sheet(PRODUCT_SHEET)
@@ -94,6 +109,8 @@ if page == "📖 스타일 정보 조회":
     except Exception as e:
         st.error("❌ 데이터 로드 실패: " + str(e))
         st.stop()
+
+    st.write("TEMU_SALES 컬럼명:", list(df_temu.columns))
 
     style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
     # ex: 3365 입력하면 BP3365, BP3365X, BTP3365 등 모두 결과에 포함

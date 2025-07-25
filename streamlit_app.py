@@ -48,19 +48,31 @@ def get_latest_shein_price(df_sales, product_number):
     return None
 
 def get_latest_temu_price(df_temu, product_number):
-    # 모든 컬럼 소문자, 공백 제거
-    df_temu.columns = [c.strip().lower() for c in df_temu.columns]
-    style_col = "SKU"        
-    status_col = "order item status"
-    date_col = "purchase date"
-    price_col = "PRICE"      
+    # 모든 컬럼 소문자, 앞뒤공백 제거로 정규화
+    columns = [c.strip().lower() for c in df_temu.columns]
+    style_col = next((c for c in columns if c == "sku"), None)
+    status_col = next((c for c in columns if "order item status" in c), None)
+    date_col = next((c for c in columns if "purchase date" in c), None)
+    price_col = next((c for c in columns if c == "price"), None)
 
-    # 스타일넘버만 추출 (SKU가 BP3365-BLACK-L → BP3365만)
+    # 실제 컬럼명 맵핑
+    real_cols = dict(zip(["sku", "status", "date", "price"], [style_col, status_col, date_col, price_col]))
+    for k, v in real_cols.items():
+        if v is None:
+            st.error(f"TEMU_SALES 시트에서 `{k.upper()}`(혹은 `{k}` 포함) 컬럼을 찾을 수 없습니다! 컬럼명 직접 확인하세요.")
+            st.write("실제 TEMU 컬럼명:", df_temu.columns.tolist())
+            return None
+
+    style_col = real_cols["sku"]
+    status_col = real_cols["status"]
+    date_col = real_cols["date"]
+    price_col = real_cols["price"]
+
+    # 스타일넘버만 추출
     df_temu["temu_style"] = df_temu[style_col].apply(
         lambda x: re.split(r'[-_]', str(x).strip().upper())[0] if pd.notna(x) else ""
     )
 
-    # 완전 일치 (선택된 스타일 넘버와)
     filtered = df_temu[
         (df_temu["temu_style"] == str(product_number).upper())
         & (df_temu[status_col].str.lower() != "cancelled")
@@ -81,8 +93,6 @@ def get_latest_temu_price(df_temu, product_number):
             except:
                 return None
     return None
-
-st.write("TEMU 컬럼명:", df_temu.colums.tolist())
 
 def show_info_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() != "":

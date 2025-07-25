@@ -155,11 +155,23 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
         st.stop()
 
     df_sales.columns = df_sales.columns.str.strip()
-    df_sales["Order Date"] = pd.to_datetime(df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True)
+
+    # robust 날짜 파싱
+    df_sales["Order Date"] = pd.to_datetime(
+        df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True
+    )
     df_sales = df_sales.dropna(subset=["Order Date"])
 
+    # --- 날짜 필터 ---
     min_date, max_date = df_sales["Order Date"].dt.date.min(), df_sales["Order Date"].dt.date.max()
     date_range = st.date_input("📅 날짜 범위 선택", [min_date, max_date], format="YYYY-MM-DD")
+
+    # st.write 디버깅
+    if len(df_sales) > 0:
+        st.write("df_sales['Order Date'] 샘플:", df_sales["Order Date"].head(10))
+        st.write("Order Date dtype:", df_sales["Order Date"].dtype)
+        st.write("min:", df_sales['Order Date'].min(), "/ max:", df_sales['Order Date'].max())
+        st.write("선택한 date_range:", date_range)
 
     if isinstance(date_range, list) and len(date_range) == 2:
         start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
@@ -169,6 +181,8 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
         ]
     else:
         df_sales_filtered = pd.DataFrame()
+
+    st.write("df_sales_filtered row 수:", len(df_sales_filtered))
 
     if df_sales_filtered.empty:
         st.info("선택된 날짜 범위에 해당하는 데이터가 없습니다.")
@@ -182,10 +196,16 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
         # --- 판매 건수 및 최신 가격 집계 ---
         latest_prices = df_sales_filtered.sort_values("Order Date").drop_duplicates("Product Description", keep="last")
         sales_summary = df_sales_filtered.groupby("Product Description").size().reset_index(name="판매 건수")
-        sales_summary = sales_summary.merge(latest_prices[["Product Description", "Product Price"]], on="Product Description", how="left")
+        sales_summary = sales_summary.merge(
+            latest_prices[["Product Description", "Product Price"]],
+            on="Product Description", how="left"
+        )
         sales_summary = sales_summary.rename(columns={"Product Price": "SHEIN_PRICE"})
 
-        df_info = df_info.merge(sales_summary, how="left", left_on="Product Number", right_on="Product Description")
+        df_info = df_info.merge(
+            sales_summary, how="left",
+            left_on="Product Number", right_on="Product Description"
+        )
         df_info["판매 건수"] = df_info["판매 건수"].fillna(0).astype(int)
         df_info["SHEIN_PRICE"] = pd.to_numeric(df_info["SHEIN_PRICE"], errors="coerce")
 
@@ -193,7 +213,6 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
             erp = row["ERP PRICE"]
             shein = row["SHEIN_PRICE"]
             sales = row["판매 건수"]
-
             if pd.isna(shein):
                 return erp + 3
             if sales == 0:

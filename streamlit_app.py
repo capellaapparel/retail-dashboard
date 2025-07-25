@@ -3,14 +3,15 @@ import pandas as pd
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
 
-# --- 구글시트 설정 ---
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
+# --- 구글시트 시트명 변경 ---
+PRODUCT_SHEET = "PRODUCT_INFO"
+SHEIN_SHEET = "SHEIN_SALES"
+TEMU_SHEET = "TEMU_SALES"
 IMAGE_CSV = "product_images.csv"
 
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
 st.set_page_config(page_title="Capella Product Dashboard", layout="wide")
-
 page = st.sidebar.radio("페이지 선택", ["📖 스타일 정보 조회", "📊 세일즈 데이터 분석"])
 
 @st.cache_data(show_spinner=False)
@@ -33,9 +34,9 @@ def load_images():
     return pd.read_csv(IMAGE_CSV)
 
 def get_latest_shein_price(df_sales, style_num):
-    # 스타일넘버로 Product Description과 정확히 일치
     filtered = df_sales[df_sales["Product Description"].astype(str).str.strip() == style_num]
     if not filtered.empty:
+        filtered = filtered.copy()
         filtered["Order Date"] = pd.to_datetime(filtered["Order Processed On"], errors="coerce")
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
@@ -44,16 +45,21 @@ def get_latest_shein_price(df_sales, style_num):
     return None
 
 def get_latest_temu_price(df_temu, style_num):
-    # 스타일넘버 추출 (contribution sku)
-    df_temu = df_temu.copy()
-    df_temu["스타일넘버"] = df_temu["contribution sku"].apply(lambda x: str(x).split('-')[0] if pd.notna(x) else "")
-    filtered = df_temu[(df_temu["스타일넘버"] == style_num) & (df_temu["order item status"].str.lower() != "cancelled")]
-    if not filtered.empty:
-        filtered["Order Date"] = pd.to_datetime(filtered["purchase date"], errors="coerce", infer_datetime_format=True)
+    # 컬럼 소문자 치환 (KeyError 방지)
+    df_temu = df_temu.rename(columns={c: c.lower().strip() for c in df_temu.columns})
+    style_col = "contribution sku"
+    status_col = "order item status"
+    date_col = "purchase date"
+    price_col = "base price total"
+
+    df_temu["스타일넘버"] = df_temu[style_col].apply(lambda x: str(x).split('-')[0] if pd.notna(x) else "")
+    filtered = df_temu[(df_temu["스타일넘버"] == style_num) & (df_temu[status_col].str.lower() != "cancelled")]
+    if not filtered.empty and date_col in filtered.columns:
+        filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce", infer_datetime_format=True)
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
-            price = latest.get("base price total") or latest.get("activity goods base price")
+            price = latest.get(price_col)
             if isinstance(price, str):
                 price = price.replace("$", "").replace(",", "")
             try:
@@ -70,10 +76,10 @@ def show_info_block(label, value):
 # --- 스타일 정보 조회 ---
 if page == "📖 스타일 정보 조회":
     try:
-        df_info = load_google_sheet("Sheet1")
+        df_info = load_google_sheet(PRODUCT_SHEET)
         df_img = load_images()
-        df_shein = load_google_sheet("Sheet2")
-        df_temu = load_google_sheet("Sheet3")
+        df_shein = load_google_sheet(SHEIN_SHEET)
+        df_temu = load_google_sheet(TEMU_SHEET)
     except Exception as e:
         st.error("❌ 데이터 로드 실패: " + str(e))
         st.stop()
@@ -81,7 +87,6 @@ if page == "📖 스타일 정보 조회":
     style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
     if style_input:
         matched = df_info[df_info["Product Number"].astype(str).str.contains(style_input, case=False, na=False)]
-
         if matched.empty:
             st.warning("❌ 해당 스타일을 찾을 수 없습니다.")
         else:
@@ -131,7 +136,6 @@ if page == "📖 스타일 정보 조회":
             bottom_vals = (row.get("BOTTOM_WAIST", ""), row.get("BOTTOM_HIP", ""), row.get("BOTTOM_LENGTH", ""), row.get("BOTTOM_INSEAM", ""))
 
             html_parts = []
-
             if has_size_data(*top1_vals):
                 html_parts.append(f"""
                 <table style='width:80%; text-align:center; border-collapse:collapse; margin-bottom:10px' border='1'>
@@ -165,4 +169,4 @@ if page == "📖 스타일 정보 조회":
             else:
                 st.caption("사이즈 정보가 없습니다.")
 
-# (아래는 세일즈 분석/가격제안 페이지 등 원하는 추가 페이지 분리해서 넣으면 됨!)
+# (세일즈 분석/추가 기능 필요시 이 아래에 이어서 구현)

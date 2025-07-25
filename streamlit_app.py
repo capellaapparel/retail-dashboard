@@ -4,6 +4,7 @@ import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
+# === 구글시트 시트명 ===
 PRODUCT_SHEET = "PRODUCT_INFO"
 SHEIN_SHEET = "SHEIN_SALES"
 TEMU_SHEET = "TEMU_SALES"
@@ -40,40 +41,62 @@ def get_latest_shein_price(df_sales, product_number):
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
-            return latest["Product Price"]
-    return None
+            price = latest["Product Price"]
+            if isinstance(price, str):
+                price = price.replace("$", "").replace(",", "")
+            try:
+                price = float(price)
+                return f"${price:.2f}" if price > 0 else "NA"
+            except:
+                return "NA"
+    return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
+    # 컬럼명 통일
     df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
     style_col = "contribution sku"
     status_col = "order item status"
     date_col = "purchase date"
     price_col = "base price total"
-    df_temu["temu_style"] = df_temu[style_col].astype(str).str.split("-").str[0].str.strip().str.upper()
+
+    # 컬럼 존재 체크
+    if not all(c in df_temu.columns for c in [style_col, status_col, date_col, price_col]):
+        return "NA"
+
+    # 스타일넘버 추출
+    df_temu[style_col] = df_temu[style_col].astype(str).str.strip().str.upper()
+    df_temu["temu_style"] = df_temu[style_col].str.split("-").str[0].str.strip().str.upper()
+    df_temu[status_col] = df_temu[status_col].astype(str).str.strip().str.lower()
+
+    # 입력 넘버도 정제
     product_number = str(product_number).strip().upper()
+
     filtered = df_temu[
         (df_temu["temu_style"] == product_number) &
-        (~df_temu[status_col].str.lower().str.contains("cancel"))
+        (df_temu[status_col] != "cancelled")
     ]
+
     if not filtered.empty:
         filtered = filtered.copy()
         filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
-            price = latest[price_col]
+            price = latest.get(price_col)
+            if isinstance(price, str):
+                price = price.replace("$", "").replace(",", "")
             try:
-                price = str(price).replace("$", "").replace(",", "")
                 price = float(price)
-                return f"${price:.2f}"
+                return f"${price:.2f}" if price > 0 else "NA"
             except:
-                return str(price)
-    return None
+                return "NA"
+    return "NA"
 
 def show_info_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() != "":
         st.markdown(f"**{label}:** {value}")
 
+# --- 스타일 정보 조회 페이지 ---
 if page == "📖 스타일 정보 조회":
     try:
         df_info = load_google_sheet(PRODUCT_SHEET)
@@ -86,6 +109,7 @@ if page == "📖 스타일 정보 조회":
 
     style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
     if style_input:
+        # 부분 검색 지원(BP3365, BP3365X 등)
         matched = df_info[df_info["Product Number"].astype(str).str.contains(style_input, case=False, na=False)]
         if matched.empty:
             st.warning("❌ 해당 스타일을 찾을 수 없습니다.")
@@ -102,20 +126,16 @@ if page == "📖 스타일 정보 조회":
                     st.image(image_url, width=300)
                 else:
                     st.caption("이미지 없음")
-
             with col2:
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['Product Number']}")
                 show_info_block("ERP PRICE", row.get("ERP PRICE", ""))
-                # 가격
-                latest_shein = get_latest_shein_price(df_shein, selected)
-                latest_temu = get_latest_temu_price(df_temu, selected)
-                shein_display = f"${latest_shein}" if latest_shein not in (None, "", "nan", "NaN") else "NA"
-                temu_display = latest_temu if latest_temu not in (None, "", "nan", "NaN") else "NA"
+                # ★★★ 가격 항목 항상 표시(없으면 NA) ★★★
+                shein_display = get_latest_shein_price(df_shein, selected)
+                temu_display = get_latest_temu_price(df_temu, selected)
                 st.markdown(f"**SHEIN PRICE:** {shein_display}")
                 st.markdown(f"**TEMU PRICE:** {temu_display}")
-
-                # 빈 정보 자동 생략
+                # 스타일 속성들 빈값만 생략
                 for col, label in [
                     ("SLEEVE", "SLEEVE"), ("NECKLINE", "NECKLINE"), ("LENGTH", "LENGTH"),
                     ("FIT", "FIT"), ("DETAIL", "DETAIL"), ("STYLE MOOD", "STYLE MOOD"),

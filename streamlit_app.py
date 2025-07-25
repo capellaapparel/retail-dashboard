@@ -134,11 +134,13 @@ if page == "📖 스타일 정보 조회":
 
                 # 가격: 정확한 Product Number만 매칭!
                 latest_shein = get_latest_shein_price(df_shein, selected)
-                latest_temu = get_latest_temu_price(df_temu, selected)
-                if latest_shein is not None and str(latest_shein).strip() != "":
-                    st.markdown(f"**SHEIN PRICE:** ${latest_shein}")
-               latest_temu = get_latest_temu_price(df_temu, selected)
-st.markdown(f"**TEMU PRICE:** {latest_temu}")
+latest_temu = get_latest_temu_price(df_temu, selected)
+
+if latest_shein is not None:
+    st.markdown(f"**SHEIN PRICE:** ${latest_shein}")
+
+st.markdown(f"**TEMU PRICE:** {latest_temu}")  # 항상 출력!
+
 
                 # 빈 정보 자동 생략
                 for col, label in [

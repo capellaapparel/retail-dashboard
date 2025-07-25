@@ -55,11 +55,8 @@ def get_latest_temu_price(df_temu, style_num):
     price_col = "base price total"
 
     style_num = str(style_num).strip().upper()
-    # TEMU contribution sku에서 스타일넘버 추출
     df_temu["스타일넘버"] = df_temu[style_col].apply(
         lambda x: re.split(r'[-_]', str(x).strip().upper())[0] if pd.notna(x) else "")
-
-    # st.write("TEMU DEBUG", style_num, df_temu[["스타일넘버", price_col, date_col]].head(3))  # 임시 디버깅
 
     filtered = df_temu[
         (df_temu["스타일넘버"].str.contains(style_num, na=False)) &
@@ -69,14 +66,13 @@ def get_latest_temu_price(df_temu, style_num):
 
     if not filtered.empty and date_col in filtered.columns:
         filtered = filtered.copy()
-        filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
+        filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce", infer_datetime_format=True)
         filtered = filtered.dropna(subset=["Order Date"])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
             price = latest.get(price_col)
-            st.write("TEMU 최신 row", latest)
             if isinstance(price, str):
-                price = price.replace("$", "").replace(",", "")
+                price = price.replace("$", "").replace(",", "").strip()
             try:
                 price = float(price)
                 return f"${price:.2f}"

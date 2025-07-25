@@ -157,20 +157,11 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
     df_sales.columns = df_sales.columns.str.strip()
     df_info.columns = df_info.columns.str.strip()
 
-    # 컬럼명 및 샘플값 디버깅
-    st.write("df_sales 컬럼명:", df_sales.columns.tolist())
-    st.write("df_info 컬럼명:", df_info.columns.tolist())
-    st.write("df_sales['Product Description'] 샘플:", df_sales["Product Description"].head(10))
-    st.write("df_info['Product Number'] 샘플:", df_info["Product Number"].head(10))
-    st.write(df_sales["Product Description"].head(20))
-
     # robust 날짜 파싱
     df_sales["Order Date"] = pd.to_datetime(df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True)
-    st.write("파싱 후 Order Date 10줄:", df_sales["Order Date"].head(10))
-    st.write("파싱 후 전체 row 수:", len(df_sales))
     df_sales = df_sales.dropna(subset=["Order Date"])
-    st.write("dropna 이후 row 수:", len(df_sales))
 
+    # 날짜 범위 선택
     min_date, max_date = df_sales["Order Date"].dt.date.min(), df_sales["Order Date"].dt.date.max()
     st.caption(f"데이터가 존재하는 날짜 범위는 {min_date} ~ {max_date} 입니다.")
 
@@ -181,10 +172,11 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
         key="shein_sales_date_range"
     )
 
-    # 값 strip!
+    # 스타일넘버 컬럼 strip!
     df_sales["Product Description"] = df_sales["Product Description"].astype(str).str.strip()
     df_info["Product Number"] = df_info["Product Number"].astype(str).str.strip()
 
+    # 날짜 필터 적용
     if isinstance(date_range, list) and len(date_range) == 2:
         start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
         compare = df_sales["Order Date"].dt.date
@@ -192,8 +184,6 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
             (compare >= start.date()) &
             (compare <= end.date())
         ]
-        st.write("필터된 row 수:", len(df_sales_filtered))
-        st.write("필터 샘플:", df_sales_filtered.head())
     else:
         df_sales_filtered = pd.DataFrame()
 
@@ -215,20 +205,15 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
         )
         sales_summary = sales_summary.rename(columns={"Product Price": "SHEIN_PRICE"})
 
-        # merge 전 확인
-        st.write("sales_summary head:", sales_summary.head())
-        st.write("df_info head(merge 전):", df_info.head())
-
+        # join!
         df_info = df_info.merge(
             sales_summary, how="left",
             left_on="Product Number", right_on="Product Description"
         )
-
-        st.write("df_info head(merge 후):", df_info.head())
-
         df_info["판매 건수"] = df_info["판매 건수"].fillna(0).astype(int)
         df_info["SHEIN_PRICE"] = pd.to_numeric(df_info["SHEIN_PRICE"], errors="coerce")
 
+        # --- 권장 가격 계산 ---
         def recommend_price(row):
             erp = row["ERP PRICE"]
             shein = row["SHEIN_PRICE"]

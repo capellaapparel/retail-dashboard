@@ -48,24 +48,25 @@ def get_latest_shein_price(df_sales, product_number):
     return None
 
 def get_latest_temu_price(df_temu, product_number):
-    # TEMU contribution sku에서 스타일넘버 추출
-    df_temu = df_temu.rename(columns={c.lower().strip(): c for c in df_temu.columns})  # 대소문자 무시 및 공백제거
-    style_col = "contribution sku"
-    status_col = "order item status"
-    date_col = "purchase date"
-    price_col = "base price total"
+    # 모든 컬럼명 소문자, 앞뒤공백 제거로 리네임
+    df_temu.columns = [c.strip().lower() for c in df_temu.columns]
+    style_col = [c for c in df_temu.columns if "contribution" in c and "sku" in c][0]
+    status_col = [c for c in df_temu.columns if "order item status" in c][0]
+    date_col = [c for c in df_temu.columns if "purchase date" in c][0]
+    price_col = [c for c in df_temu.columns if "base price total" in c][0]
 
-    # contribution sku 예: BP3365-BLACK-L → Product Number는 BP3365 처럼
-    df_temu["스타일넘버"] = df_temu[style_col].apply(
-        lambda x: re.split(r'[-_]', str(x).strip().upper())[0] if pd.notna(x) else "")
+    # TEMU 스타일넘버 추출
+    df_temu["temu_style"] = df_temu[style_col].apply(
+        lambda x: re.split(r'[-_]', str(x).strip().upper())[0] if pd.notna(x) else ""
+    )
 
-    # Product Number만 완전히 일치하는 것만 사용 (ex: BP3365만)
+    # 완전일치만!
     filtered = df_temu[
-        (df_temu["스타일넘버"] == str(product_number).upper()) &
-        (df_temu[status_col].str.lower() != "cancelled")
+        (df_temu["temu_style"] == str(product_number).upper())
+        & (df_temu[status_col].str.lower() != "cancelled")
     ]
 
-    if not filtered.empty and date_col in filtered.columns:
+    if not filtered.empty:
         filtered = filtered.copy()
         filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
         filtered = filtered.dropna(subset=["Order Date"])

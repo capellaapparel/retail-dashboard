@@ -164,6 +164,15 @@ if page == "📊 세일즈 데이터 분석 (Shein)":
     min_date, max_date = df_sales["Order Date"].dt.date.min(), df_sales["Order Date"].dt.date.max()
     st.caption(f"데이터가 존재하는 날짜 범위는 {min_date} ~ {max_date} 입니다.")
 
+    st.write("원본 Order Processed On 10줄:", df_sales["Order Processed On"].head(10))
+df_sales["Order Date"] = pd.to_datetime(
+    df_sales["Order Processed On"], errors="coerce", infer_datetime_format=True
+)
+st.write("파싱 후 Order Date 10줄:", df_sales["Order Date"].head(10))
+st.write("파싱 후 전체 row 수:", len(df_sales))
+df_sales = df_sales.dropna(subset=["Order Date"])
+st.write("dropna 이후 row 수:", len(df_sales))
+
     # key 지정해서 중복 방지!
     date_range = st.date_input(
         "📅 날짜 범위 선택",

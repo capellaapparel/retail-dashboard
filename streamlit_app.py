@@ -110,10 +110,10 @@ if page == "📖 스타일 정보 조회":
                 # 가격
                 latest_shein = get_latest_shein_price(df_shein, selected)
                 latest_temu = get_latest_temu_price(df_temu, selected)
-                if latest_shein is not None and str(latest_shein).strip() != "":
-                    st.markdown(f"**SHEIN PRICE:** ${latest_shein}")
-                if latest_temu is not None and str(latest_temu).strip() != "":
-                    st.markdown(f"**TEMU PRICE:** {latest_temu}")
+                shein_display = f"${latest_shein}" if latest_shein not in (None, "", "nan", "NaN") else "NA"
+                temu_display = latest_temu if latest_temu not in (None, "", "nan", "NaN") else "NA"
+                st.markdown(f"**SHEIN PRICE:** {shein_display}")
+                st.markdown(f"**TEMU PRICE:** {temu_display}")
 
                 # 빈 정보 자동 생략
                 for col, label in [

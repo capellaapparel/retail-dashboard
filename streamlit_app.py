@@ -16,7 +16,7 @@ def parse_temudate(dt):
 PRODUCT_SHEET = "PRODUCT_INFO"
 SHEIN_SHEET = "SHEIN_SALES"
 TEMU_SHEET = "TEMU_SALES"
-IMAGE_CSV = "product_images.csv"
+
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
 
 st.set_page_config(page_title="Capella Product Dashboard", layout="wide")

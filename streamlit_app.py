@@ -50,68 +50,30 @@ def get_latest_shein_price(df_sales, product_number):
 
 def get_latest_temu_price(df_temu, product_number):
     df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
-
-    if 'product number' not in df_temu.columns or 'base price total' not in df_temu.columns or 'purchase date' not in df_temu.columns:
-        st.warning("컬럼명 문제: product number, base price total, purchase date 필수!")
-        return "NA"
-
-    st.write("TEMU Product Number 전체:", df_temu['product number'].unique())
-    st.write("입력 product_number:", product_number)
-
+    # 필수 컬럼 체크
+    required = ['product number', 'base price total', 'purchase date', 'order item status']
+    for col in required:
+        if col not in df_temu.columns:
+            return "NA"
+    # 정상(취소아닌) 주문 중, Product Number 매칭
     filtered = df_temu[
         (df_temu['product number'].astype(str).str.strip().str.upper() == str(product_number).strip().upper()) &
         (df_temu['order item status'].astype(str).str.lower().str.strip() != "cancelled")
     ]
-    st.write("====TEMU Product Number 필터 rows 샘플====")
-    st.write(filtered[['product number', 'base price total', 'purchase date', 'order item status']].head())
-
     if filtered.empty:
         return "NA"
-
     filtered = filtered.copy()
     filtered["Order Date"] = pd.to_datetime(filtered['purchase date'], errors="coerce")
     filtered = filtered.dropna(subset=["Order Date"])
     if filtered.empty:
         return "NA"
-
     latest = filtered.sort_values("Order Date").iloc[-1]
     price = latest.get('base price total')
-    st.write("TEMU 최신 row:", latest)
-    st.write("TEMU 최신 price:", price)
-
     try:
-        price_float = float(str(price).replace("$", "").replace(",", ""))
-        return f"${price_float:.2f}"
-    except Exception as ex:
-        st.write("TEMU 변환 에러:", price, ex)
+        price = float(str(price).replace("$", "").replace(",", ""))
+        return f"${price:.2f}"
+    except:
         return "NA"
-
-
-
-
-
-
-    for idx, row in filtered.iterrows():
-        price = row.get(price_col)
-        st.write(f"TEMU row idx={idx}, price_raw={price!r}")
-        try:
-            if price is None:
-                continue
-            price_str = str(price).replace("$", "").replace(",", "").strip()
-            if price_str == "" or price_str.lower() == "na":
-                continue
-            price_f = float(price_str)
-            st.write(f"▶︎ TEMU price_f: {price_f}")
-            return f"${price_f:.2f}"
-        except Exception as ex:
-            st.write(f"✖︎ 변환에러: {price!r} → {ex}")
-            continue
-    return "NA"
-
-
-
-
-
 
 def show_info_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() != "":
@@ -150,12 +112,11 @@ if page == "📖 스타일 정보 조회":
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['Product Number']}")
                 show_info_block("ERP PRICE", row.get("ERP PRICE", ""))
-                # 가격: TEMU → SHEIN 순서, 값 없으면 NA
+                # TEMU → SHEIN 순으로 가격 표시
                 latest_temu = get_latest_temu_price(df_temu, selected)
                 latest_shein = get_latest_shein_price(df_shein, selected)
                 st.markdown(f"**TEMU PRICE:** {latest_temu}")
                 st.markdown(f"**SHEIN PRICE:** {latest_shein}")
-                # 빈 정보 자동 생략
                 for col, label in [
                     ("SLEEVE", "SLEEVE"), ("NECKLINE", "NECKLINE"), ("LENGTH", "LENGTH"),
                     ("FIT", "FIT"), ("DETAIL", "DETAIL"), ("STYLE MOOD", "STYLE MOOD"),

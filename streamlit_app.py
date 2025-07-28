@@ -41,7 +41,7 @@ def show_info_block(label, value):
         st.markdown(f"**{label}:** {value}")
 
 def get_latest_temu_price(df_temu, product_number):
-    df_sales.columns = [c.lower().strip() for c in df_temu.columns]
+    df_temu.columns = [c.lower().strip() for c in df_temu.columns]
     filtered = df_temu[
         df_temu["product number"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
     ]

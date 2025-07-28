@@ -36,9 +36,19 @@ def load_google_sheet(sheet_name):
     df.columns = [c.lower().strip() for c in df.columns]
     return df
 
-def try_float(x):
-    try: return float(str(x).replace("$","").replace(",","").strip())
-    except: return 0
+def parse_temudate(dt):
+    try:
+        # 예시: 'Jul 22, 2025, 1:04 am PDT(UTC-7)'
+        return parser.parse(str(dt).split('(')[0].strip(), fuzzy=True)
+    except Exception:
+        return pd.NaT
+
+def parse_sheindate(dt):
+    try:
+        # 예시: '2025-06-10', '2025/06/10', '06/10/2025', 등 자동인식
+        return pd.to_datetime(str(dt), errors="coerce", infer_datetime_format=True)
+    except Exception:
+        return pd.NaT
 
 def show_price_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() not in ("", "nan", "NaN"):
@@ -177,10 +187,8 @@ if page == "📖 스타일 정보 조회":
 
 
 # --- 세일즈 대시보드 페이지 ---
-if page == "📊 세일즈 대시보드":
-    st.title("세일즈 대시보드")
-
-    # 데이터 불러오기
+if page == "세일즈 대시보드":
+    # === 데이터 로딩 ===
     try:
         df_shein = load_google_sheet(SHEIN_SHEET)
         df_temu = load_google_sheet(TEMU_SHEET)
@@ -188,87 +196,73 @@ if page == "📊 세일즈 대시보드":
         st.error("❌ 데이터 로드 실패: " + str(e))
         st.stop()
 
-    # 날짜 컬럼 표준화
-    df_shein["order date"] = pd.to_datetime(df_shein["order processed on"], errors="coerce")
-    df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
+    # ======= 날짜 파싱 (각자 포맷에 맞게) =======
+    df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
+    df_temu["order date"]  = df_temu["purchase date"].apply(parse_temudate)
 
-    st.write("SHEIN 주문일(5개):", df_shein["order processed on"].head())
-st.write("TEMU 주문일(5개):", df_temu["purchase date"].head())
-st.write("파싱된 SHEIN order date(5개):", df_shein["order date"].head())
-st.write("파싱된 TEMU order date(5개):", df_temu["order date"].head())
-st.write("SHEIN qty(5개):", df_shein["qty"].head())
-st.write("TEMU qty(5개):", df_temu["qty"].head())
-st.write("SHEIN sales(5개):", df_shein["sales"].head())
-st.write("TEMU sales(5개):", df_temu["sales"].head())
+    # ======= 필수 컬럼만 남기기 및 표준화 =======
+    shein_sales = df_shein.rename(columns={
+        "product description": "product number",
+        "qty": "qty",
+        "product price": "unit price"
+    }).copy()
+    shein_sales["platform"] = "SHEIN"
+    shein_sales["qty"] = pd.to_numeric(shein_sales["qty"], errors="coerce").fillna(0)
+    shein_sales["sales"] = shein_sales["qty"] * pd.to_numeric(shein_sales["unit price"], errors="coerce").fillna(0)
 
-    # 통합
-    df_shein["platform"] = "SHEIN"
-    df_temu["platform"] = "TEMU"
-    df_shein["product number"] = df_shein["product description"].astype(str).str.strip().str.upper()
-    df_temu["product number"] = df_temu["product number"].astype(str).str.strip().str.upper()
+    temu_sales = df_temu.rename(columns={
+        "product number": "product number",
+        "qty": "qty",
+        "base price total": "unit price"
+    }).copy()
+    temu_sales["platform"] = "TEMU"
+    temu_sales["qty"] = pd.to_numeric(temu_sales["qty"], errors="coerce").fillna(0)
+    temu_sales["sales"] = temu_sales["qty"] * pd.to_numeric(temu_sales["unit price"], errors="coerce").fillna(0)
 
-    # 판매수량/매출 표준화
-    df_shein["qty"] = df_shein["quantity"].apply(try_float) if "quantity" in df_shein.columns else 1
-    df_temu["qty"] = df_temu["quantity purchased"].apply(try_float) if "quantity purchased" in df_temu.columns else 1
-    df_shein["sales"] = df_shein["product price"].apply(try_float) * df_shein["qty"]
-    df_temu["sales"] = df_temu["base price total"].apply(try_float) * df_temu["qty"]
+    # ======= 통합 =======
+    df_all = pd.concat([shein_sales, temu_sales], ignore_index=True)
+    df_all = df_all[df_all["order date"].notna()]
 
-    # 필터 UI
-    platform_opt = st.sidebar.radio("플랫폼", options=["BOTH", "SHEIN", "TEMU"], index=0)
-    mindate = min(
-        df_shein["order date"].min(),
-        df_temu["order date"].min()
-    )
-    maxdate = max(
-        df_shein["order date"].max(),
-        df_temu["order date"].max()
-    )
-    date_range = st.sidebar.date_input("조회 기간", [mindate, maxdate])
+    # ======= 대시보드 필터 =======
+    st.sidebar.subheader("플랫폼")
+    platform_filter = st.sidebar.radio("플랫폼", ["BOTH", "SHEIN", "TEMU"], horizontal=True)
+    st.sidebar.subheader("조회 기간")
+    min_date = df_all["order date"].min()
+    max_date = df_all["order date"].max()
+    date_range = st.sidebar.date_input("기간", (min_date, max_date))
 
-    # 데이터 필터링
-    if platform_opt == "BOTH":
-        df_all = pd.concat([df_shein, df_temu], ignore_index=True)
-    elif platform_opt == "SHEIN":
-        df_all = df_shein.copy()
-    else:
-        df_all = df_temu.copy()
+    # ======= 필터링 =======
+    df_view = df_all.copy()
+    if platform_filter != "BOTH":
+        df_view = df_view[df_view["platform"] == platform_filter]
+    df_view = df_view[(df_view["order date"] >= pd.to_datetime(date_range[0])) & (df_view["order date"] <= pd.to_datetime(date_range[1]))]
 
-    df_all = df_all[
-        (df_all["order date"] >= pd.to_datetime(date_range[0])) &
-        (df_all["order date"] <= pd.to_datetime(date_range[1]))
-    ]
+    # ======= KPI =======
+    total_qty = int(df_view["qty"].sum())
+    total_sales = df_view["sales"].sum()
+    order_count = df_view.shape[0]
 
-    # KPI
-    col1, col2, col3 = st.columns(3)
-    col1.metric("총 판매수량", int(df_all["qty"].sum()))
-    col2.metric("총 매출", f"${df_all['sales'].sum():,.2f}")
-    col3.metric("주문건수", len(df_all))
+    colA, colB, colC = st.columns(3)
+    colA.metric("총 판매수량", f"{total_qty:,}")
+    colB.metric("총 매출", f"${total_sales:,.2f}")
+    colC.metric("주문건수", f"{order_count:,}")
 
-    # ---- 일별 판매량/매출 추이
-    st.markdown("### 일별 판매 추이")
-    daily = df_all.groupby(df_all["order date"].dt.date).agg({
-        "qty":"sum",
-        "sales":"sum"
-    }).reset_index()
-    st.line_chart(daily.set_index("order date")[["qty","sales"]])
+    # ======= 일별 추이 =======
+    st.subheader("일별 판매 추이")
+    daily = df_view.groupby("order date").agg({"qty": "sum", "sales": "sum"}).reset_index()
+    st.line_chart(daily.set_index("order date")[["qty", "sales"]])
 
-    # ---- 베스트셀러 TOP10
-    st.markdown("### 베스트셀러 TOP10")
-    best = (
-        df_all.groupby("product number")
-        .agg({"qty":"sum","sales":"sum"})
-        .sort_values("qty", ascending=False)
-        .head(10)
-        .reset_index()
-    )
-    st.dataframe(best, use_container_width=True)
+    # ======= 베스트셀러 TOP10 =======
+    st.subheader("베스트셀러 TOP10")
+    best = df_view.groupby("product number").agg({"qty": "sum", "sales": "sum"}).reset_index()
+    best = best.sort_values("qty", ascending=False).head(10)
+    st.dataframe(best)
 
-    # ---- 플랫폼별 breakdown (비율 파이차트)
-    st.markdown("### 플랫폼별 매출 비율")
-    platform_summary = df_all.groupby("platform").agg({"sales":"sum", "qty":"sum"})
-    st.bar_chart(platform_summary["sales"])
+    # ======= 플랫폼별 매출 비율 =======
+    st.subheader("플랫폼별 매출 비율")
+    platform_stats = df_view.groupby("platform")["sales"].sum()
+    st.bar_chart(platform_stats)
 
-    # ---- 상품별 상세 (옵션)
-    with st.expander("상품별 상세 데이터 보기"):
-        st.dataframe(df_all, use_container_width=True)
+    # ======= DEBUG: 실제 날짜/데이터 확인용 =======
+    # st.write(df_view[["order date", "qty", "sales", "platform"]].sort_values("order date").tail(30))
 

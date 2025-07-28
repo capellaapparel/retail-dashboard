@@ -56,24 +56,22 @@ def get_latest_shein_price(df_sales, product_number):
 def get_latest_temu_price(df_temu, product_number):
     # 모든 컬럼 소문자화
     df_temu.columns = [c.lower().strip() for c in df_temu.columns]
-    # 디버깅 출력
-    st.write("TEMU Product Number 유니크:", df_temu['product number'].unique())
-    st.write("선택된 Product Number:", product_number)
-    
-    # Cancelled 제외
+
+    # Product Number 일치만 필터 (상태 무관)
     filtered = df_temu[
-        (df_temu['product number'].astype(str).str.strip().str.upper() == str(product_number).strip().upper())
-        & (~df_temu['order item status'].astype(str).str.lower().str.contains("cancelled"))
+        df_temu['product number'].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
     ]
     if filtered.empty:
         return "NA"
 
-    # 날짜 정렬 및 최신값
+    # 날짜 컬럼 추가 및 정렬
     filtered = filtered.copy()
     filtered['order date'] = pd.to_datetime(filtered['purchase date'], errors='coerce')
     filtered = filtered.dropna(subset=['order date'])
     if filtered.empty:
         return "NA"
+
+    # 가장 최근 row
     latest = filtered.sort_values('order date').iloc[-1]
     price = latest.get('base price total')
     try:
@@ -82,9 +80,6 @@ def get_latest_temu_price(df_temu, product_number):
     except:
         return "NA"
 
-def show_info_block(label, value):
-    if value not in ("", None, float("nan")) and str(value).strip() != "":
-        st.markdown(f"**{label}:** {value}")
 
 # --- 스타일 정보 조회 페이지 ---
 if page == "📖 스타일 정보 조회":

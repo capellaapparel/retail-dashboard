@@ -116,7 +116,7 @@ if page == "📖 스타일 정보 조회":
         else:
             selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
             row = df_info[df_info["product number"] == selected].iloc[0]
-            image_url = str(row.get("image", "")).strip()  # 소문자 "image"로!
+            image_url = str(row.get("IMAGE", "")).strip()  # 소문자 "image"로!
 
             st.markdown("---")
             col1, col2 = st.columns([1, 2])

@@ -60,23 +60,34 @@ def get_latest_shein_price(df_shein, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
+    st.write("==[ TEMU 전체 product number ]==", df_temu['product number'].unique())
+    st.write("==[ 입력값 ]==", product_number)
     filtered = df_temu[
-        df_temu["product number"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
+        df_temu['product number'].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
     ]
-    if not filtered.empty:
-        filtered = filtered.copy()
-        filtered["order date"] = pd.to_datetime(filtered["purchase date"], errors="coerce")
-        filtered = filtered.dropna(subset=["order date"])
-        if not filtered.empty:
-            latest = filtered.sort_values("order date").iloc[-1]
-            price = latest["base price total"]
-            try:
-                price = float(str(price).replace("$", "").replace(",", ""))
-                return f"${price:.2f}"
-            except:
-                return "NA"
-    return "NA"
+    st.write("==[ 필터 후 row 수 ]==", len(filtered))
+    st.write("==[ 필터 후 데이터 샘플 ]==", filtered.head())
 
+    if filtered.empty:
+        return "NA"
+
+    filtered = filtered.copy()
+    filtered["order date"] = pd.to_datetime(filtered["purchase date"], errors="coerce")
+    filtered = filtered.dropna(subset=["order date"])
+    if filtered.empty:
+        st.write("==[ order date drop 후 empty ]==")
+        return "NA"
+
+    latest = filtered.sort_values("order date").iloc[-1]
+    st.write("==[ 가장 최신 row ]==", latest)
+    price = latest["base price total"]
+    st.write("==[ 최신 price 값 ]==", price)
+    try:
+        price = float(str(price).replace("$", "").replace(",", ""))
+        return f"${price:.2f}"
+    except Exception as ex:
+        st.write("==[ 가격 변환 에러 ]==", price, ex)
+        return "NA"
 if page == "📖 스타일 정보 조회":
     try:
         df_info = load_google_sheet(PRODUCT_SHEET)

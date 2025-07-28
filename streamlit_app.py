@@ -8,15 +8,13 @@ from dateutil import parser
 def parse_temudate(dt):
     try:
         # 예시: 'Jul 22, 2025, 1:04 am PDT(UTC-7)'
-        return parser.parse(dt.split('(')[0].strip(), fuzzy=True)
+        return parser.parse(str(dt).split('(')[0].strip(), fuzzy=True)
     except Exception as ex:
         return pd.NaT
 
-# 시트명/파일명
 PRODUCT_SHEET = "PRODUCT_INFO"
 SHEIN_SHEET = "SHEIN_SALES"
 TEMU_SHEET = "TEMU_SALES"
-
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
 
 st.set_page_config(page_title="Capella Product Dashboard", layout="wide")
@@ -62,12 +60,14 @@ def get_latest_shein_price(df_sales, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
+    # 날짜 파싱 커스텀 (구글시트 TEMU_SALES에는 날짜가 PDT 같은 포맷일 수도 있음)
     filtered = df_temu[
         df_temu["product number"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
     ]
     if not filtered.empty:
         filtered = filtered.copy()
-        filtered["order date"] = pd.to_datetime(filtered["purchase date"], errors="coerce")
+        # 날짜 파싱 (dateutil)
+        filtered["order date"] = filtered["purchase date"].apply(parse_temudate)
         filtered = filtered.dropna(subset=["order date"])
         if not filtered.empty:
             latest = filtered.sort_values("order date").iloc[-1]
@@ -96,7 +96,7 @@ if page == "📖 스타일 정보 조회":
         else:
             selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
             row = df_info[df_info["product number"] == selected].iloc[0]
-            image_url = row.get("IMAGE", "")
+            image_url = row.get("image", "")
 
             st.markdown("---")
             col1, col2 = st.columns([1, 2])

@@ -64,13 +64,13 @@ def get_latest_temu_price(df_temu, product_number):
     filtered = df_temu[
         df_temu['product number'].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
     ]
-    if filtered.empty:
-        return "NA"
+    if not filtered.empty:
+       
     filtered = filtered.copy()
     filtered['order date'] = pd.to_datetime(filtered['purchase date'], errors='coerce')
     filtered = filtered.dropna(subset=['order date'])
-    if filtered.empty:
-        return "NA"
+    if not filtered.empty:
+       
     latest = filtered.sort_values('order date').iloc[-1]
     price = latest.get('base price total')
     try:

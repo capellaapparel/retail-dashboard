@@ -39,15 +39,13 @@ def load_google_sheet(sheet_name):
     df.columns = [c.lower().strip() for c in df.columns]
     return df
 
-
-
 def show_info_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() != "":
         st.markdown(f"**{label}:** {value}")
 
-def get_latest_shein_price(df_shein, product_number):
-    filtered = df_shein[
-        df_shein["product description"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
+def get_latest_shein_price(df_sales, product_number):
+    filtered = df_sales[
+        df_sales["product description"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
     ]
     if not filtered.empty:
         filtered = filtered.copy()
@@ -64,33 +62,22 @@ def get_latest_shein_price(df_shein, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
-    df_temu.columns = [c.lower().strip() for c in df_temu.columns]
     filtered = df_temu[
         df_temu["product number"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
     ]
-    
-    if filtered.empty:
-        return "NA"
-
-    # 날짜 직접 파싱!
-    filtered = filtered.copy()
-    filtered["order date"] = filtered["purchase date"].apply(parse_temudate)
-  
-    filtered = filtered.dropna(subset=["order date"])
-    if filtered.empty:
-        return "NA"
-
-    latest = filtered.sort_values("order date").iloc[-1]
-  
-    price = latest.get("base price total")
-   
-    try:
-        price = float(str(price).replace("$", "").replace(",", ""))
-        return f"${price:.2f}"
-    except Exception as ex:
-    
-        return "NA"
-
+    if not filtered.empty:
+        filtered = filtered.copy()
+        filtered["order date"] = pd.to_datetime(filtered["purchase date"], errors="coerce")
+        filtered = filtered.dropna(subset=["order date"])
+        if not filtered.empty:
+            latest = filtered.sort_values("order date").iloc[-1]
+            price = latest["base price total"]
+            try:
+                price = float(str(price).replace("$", "").replace(",", ""))
+                return f"${price:.2f}"
+            except:
+                return "NA"
+    return "NA"
 
 if page == "📖 스타일 정보 조회":
     try:
@@ -109,12 +96,12 @@ if page == "📖 스타일 정보 조회":
         else:
             selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
             row = df_info[df_info["product number"] == selected].iloc[0]
-            image_url = row.get("IMAGE", "")
+            image_url = row.get("image", "")
 
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
             with col1:
-                if image_url:
+                if image_url and isinstance(image_url, str) and image_url.strip():
                     st.image(image_url, width=300)
                 else:
                     st.caption("이미지 없음")
@@ -126,7 +113,6 @@ if page == "📖 스타일 정보 조회":
                 latest_shein = get_latest_shein_price(df_shein, selected)
                 st.markdown(f"**TEMU PRICE:** {latest_temu}")
                 st.markdown(f"**SHEIN PRICE:** {latest_shein}")
-                # 빈 정보 생략
                 for col, label in [
                     ("sleeve", "SLEEVE"), ("neckline", "NECKLINE"), ("length", "LENGTH"),
                     ("fit", "FIT"), ("detail", "DETAIL"), ("style mood", "STYLE MOOD"),
@@ -138,8 +124,10 @@ if page == "📖 스타일 정보 조회":
 
             st.markdown("---")
             st.subheader("📏 Size Chart")
+
             def has_size_data(*args):
                 return any(str(v).strip() not in ["", "0", "0.0"] for v in args)
+
             top1_vals = (row.get("top1_chest", ""), row.get("top1_length", ""), row.get("top1_sleeve", ""))
             top2_vals = (row.get("top2_chest", ""), row.get("top2_length", ""), row.get("top2_sleeve", ""))
             bottom_vals = (row.get("bottom_waist", ""), row.get("bottom_hip", ""), row.get("bottom_length", ""), row.get("bottom_inseam", ""))

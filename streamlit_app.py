@@ -27,12 +27,18 @@ def load_google_sheet(sheet_name):
     sheet = client.open_by_url(GOOGLE_SHEET_URL).worksheet(sheet_name)
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
-    df.columns = [c.lower().strip() for c in df.columns]   # 컬럼명 확실하게 소문자+공백제거
+    df.columns = [c.lower().strip() for c in df.columns]   # 모든 컬럼 소문자
     return df
 
 @st.cache_data(show_spinner=False)
 def load_images():
-    return pd.read_csv(IMAGE_CSV)
+    df = pd.read_csv(IMAGE_CSV)
+    df.columns = [c.lower().strip() for c in df.columns]
+    return df
+
+def show_info_block(label, value):
+    if value not in ("", None, float("nan")) and str(value).strip() != "":
+        st.markdown(f"**{label}:** {value}")
 
 def get_latest_shein_price(df_sales, product_number):
     df_sales.columns = [c.lower().strip() for c in df_sales.columns]
@@ -54,24 +60,17 @@ def get_latest_shein_price(df_sales, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
-    # 모든 컬럼 소문자화
     df_temu.columns = [c.lower().strip() for c in df_temu.columns]
-
-    # Product Number 일치만 필터 (상태 무관)
     filtered = df_temu[
         df_temu['product number'].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
     ]
     if filtered.empty:
         return "NA"
-
-    # 날짜 컬럼 추가 및 정렬
     filtered = filtered.copy()
     filtered['order date'] = pd.to_datetime(filtered['purchase date'], errors='coerce')
     filtered = filtered.dropna(subset=['order date'])
     if filtered.empty:
         return "NA"
-
-    # 가장 최근 row
     latest = filtered.sort_values('order date').iloc[-1]
     price = latest.get('base price total')
     try:
@@ -79,7 +78,6 @@ def get_latest_temu_price(df_temu, product_number):
         return f"${price_float:.2f}"
     except:
         return "NA"
-
 
 # --- 스타일 정보 조회 페이지 ---
 if page == "📖 스타일 정보 조회":
@@ -100,8 +98,8 @@ if page == "📖 스타일 정보 조회":
         else:
             selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
             row = df_info[df_info["product number"] == selected].iloc[0]
-            img_row = df_img[df_img["Product Number"] == selected]
-            image_url = img_row.iloc[0]["First Image"] if not img_row.empty else None
+            img_row = df_img[df_img["product number"] == selected]
+            image_url = img_row.iloc[0]["first image"] if not img_row.empty else None
 
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
@@ -113,8 +111,7 @@ if page == "📖 스타일 정보 조회":
             with col2:
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['product number']}")
-                show_info_block("ERP PRICE", row.get("ERP PRICE", ""))
-                # Temu → Shein 가격 모두 동일하게 출력 (값 없으면 NA)
+                show_info_block("ERP PRICE", row.get("erp price", ""))
                 latest_temu = get_latest_temu_price(df_temu, selected)
                 latest_shein = get_latest_shein_price(df_shein, selected)
                 st.markdown(f"**TEMU PRICE:** {latest_temu}")

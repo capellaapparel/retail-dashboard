@@ -116,10 +116,12 @@ if page == "📖 스타일 정보 조회":
             col1, col2 = st.columns([1, 2])
             with col1:
                 # ** 여기서 반드시 http/https 로 시작하는지 체크 (가끔 구글시트에서 빈칸일 때 있음) **
-                if image_url and isinstance(image_url, str) and image_url.startswith("https"):
-                    st.image(image_url, width=300)
-                else:
-                    st.caption("이미지 없음")
+                image_url = row.get("image", "")
+# 혹시 공백/NaN/None도 포함되어 있을 수 있으니 모두 체크
+if pd.notna(image_url) and isinstance(image_url, str) and image_url.strip().lower().startswith("http"):
+    st.image(image_url.strip(), width=300)
+else:
+    st.caption("이미지 없음")
             with col2:
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['product number']}")

@@ -85,7 +85,6 @@ def get_latest_temu_price(df_temu, product_number):
 if page == "📖 스타일 정보 조회":
     try:
         df_info = load_google_sheet(PRODUCT_SHEET)
-        df_info.columns = [c.lower().strip() for c in df_info.columns]
         df_img = load_images()
         df_shein = load_google_sheet(SHEIN_SHEET)
         df_temu = load_google_sheet(TEMU_SHEET)
@@ -114,7 +113,7 @@ if page == "📖 스타일 정보 조회":
             with col2:
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['product number']}")
-                show_info_block("ERP PRICE", row.get("erp price", ""))
+                show_info_block("ERP PRICE", row.get("ERP PRICE", ""))
                 # Temu → Shein 가격 모두 동일하게 출력 (값 없으면 NA)
                 latest_temu = get_latest_temu_price(df_temu, selected)
                 latest_shein = get_latest_shein_price(df_shein, selected)

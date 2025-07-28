@@ -7,7 +7,6 @@ from dateutil import parser
 
 def parse_temudate(dt):
     try:
-        # 예시: 'Jul 22, 2025, 1:04 am PDT(UTC-7)'
         return parser.parse(str(dt).split('(')[0].strip(), fuzzy=True)
     except Exception as ex:
         return pd.NaT
@@ -34,7 +33,7 @@ def load_google_sheet(sheet_name):
     sheet = client.open_by_url(GOOGLE_SHEET_URL).worksheet(sheet_name)
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
-    df.columns = [c.lower().strip() for c in df.columns]
+    df.columns = [c.lower().strip() for c in df.columns]  # 모든 컬럼 소문자화
     return df
 
 def show_info_block(label, value):
@@ -60,13 +59,11 @@ def get_latest_shein_price(df_sales, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
-    # 날짜 파싱 커스텀 (구글시트 TEMU_SALES에는 날짜가 PDT 같은 포맷일 수도 있음)
     filtered = df_temu[
         df_temu["product number"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
     ]
     if not filtered.empty:
         filtered = filtered.copy()
-        # 날짜 파싱 (dateutil)
         filtered["order date"] = filtered["purchase date"].apply(parse_temudate)
         filtered = filtered.dropna(subset=["order date"])
         if not filtered.empty:
@@ -96,15 +93,15 @@ if page == "📖 스타일 정보 조회":
         else:
             selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
             row = df_info[df_info["product number"] == selected].iloc[0]
-            image_url = str(row.get("IMAGE", "")).strip()
+            image_url = str(row.get("image", "")).strip()  # 소문자 "image"로!
 
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
             with col1:
                 if image_url:
-    st.image(image_url, width=300)
-else:
-    st.caption("이미지 없음")
+                    st.image(image_url, width=300)
+                else:
+                    st.caption("이미지 없음")
             with col2:
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['product number']}")

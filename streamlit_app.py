@@ -93,33 +93,26 @@ def get_latest_temu_price(df_temu, product_number):
 # =========================
 #  스타일 정보 조회 페이지
 # =========================
-if page == "📖 스타일 정보 조회":
-    try:
-        df_info = load_google_sheet(PRODUCT_SHEET)
-        df_shein = load_google_sheet(SHEIN_SHEET)
-        df_temu = load_google_sheet(TEMU_SHEET)
-    except Exception as e:
-        st.error("❌ 데이터 로드 실패: " + str(e))
-        st.stop()
+df_info = pd.DataFrame([
+    {"product number": "BT5484", "image": "https://img.ltwebstatic.com/images3_spmp/2025/02/15/33/1739556115fd1c05af09eb50bd04045df45318b41e_thumbnail_220x293.jpg"},
+    {"product number": "AP31071", "image": "https://img.ltwebstatic.com/v4/j/spmp/2025/06/11/6f/1749595235da1cb7ee7b3559dc81143014070349d2.jpg"}
+])
 
-    style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
-    if style_input:
-        matched = df_info[df_info["product number"].astype(str).str.contains(style_input, case=False, na=False)]
-        if matched.empty:
-            st.warning("❌ 해당 스타일을 찾을 수 없습니다.")
+style_input = st.text_input("🔍 스타일 번호 입력:", "")
+if style_input:
+    matched = df_info[df_info["product number"].astype(str).str.contains(style_input, case=False, na=False)]
+    if matched.empty:
+        st.warning("❌ 해당 스타일을 찾을 수 없습니다.")
+    else:
+        selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
+        row = df_info[df_info["product number"] == selected].iloc[0]
+        st.write("DEBUG: row = ", row)   # row 전체 확인
+        image_url = str(row.get("image", "")).strip()
+        st.write("DEBUG: image_url =", image_url)   # 실제 url 값 확인
+        if image_url and image_url.startswith("http"):
+            st.image(image_url, width=350)
         else:
-            selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
-            row = df_info[df_info["product number"] == selected].iloc[0]
-             # 반드시 소문자 "image"로!
-
-            st.markdown("---")
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                image_url = str(row.get("image", ""))
-                if image_url:
-                    st.image(image_url, width=400)
-                else:
-                    st.caption("이미지 없음")
+            st.caption("이미지 없음")
             with col2:
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['product number']}")

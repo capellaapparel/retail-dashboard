@@ -49,31 +49,30 @@ def get_latest_shein_price(df_sales, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
+    # 컬럼명 소문자화
     df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
-    # 필수 컬럼 체크
-    required = ['product number', 'base price total', 'purchase date', 'order item status']
-    for col in required:
-        if col not in df_temu.columns:
-            return "NA"
-    # 정상(취소아닌) 주문 중, Product Number 매칭
+    # 반드시 완전 일치만! (쉬인 방식)
     filtered = df_temu[
-        (df_temu['product number'].astype(str).str.strip().str.upper() == str(product_number).strip().upper()) &
-        (df_temu['order item status'].astype(str).str.lower().str.strip() != "cancelled")
+        df_temu["product number"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
     ]
-    if filtered.empty:
-        return "NA"
-    filtered = filtered.copy()
-    filtered["Order Date"] = pd.to_datetime(filtered['purchase date'], errors="coerce")
-    filtered = filtered.dropna(subset=["Order Date"])
-    if filtered.empty:
-        return "NA"
-    latest = filtered.sort_values("Order Date").iloc[-1]
-    price = latest.get('base price total')
-    try:
-        price = float(str(price).replace("$", "").replace(",", ""))
-        return f"${price:.2f}"
-    except:
-        return "NA"
+    # 정상(취소아닌) 주문만
+    if 'order item status' in df_temu.columns:
+        filtered = filtered[filtered["order item status"].astype(str).str.lower().str.strip() != "cancelled"]
+
+    if not filtered.empty:
+        filtered = filtered.copy()
+        filtered["Order Date"] = pd.to_datetime(filtered["purchase date"], errors="coerce")
+        filtered = filtered.dropna(subset=["Order Date"])
+        if not filtered.empty:
+            latest = filtered.sort_values("Order Date").iloc[-1]
+            price = latest["base price total"]
+            try:
+                price = float(str(price).replace("$", "").replace(",", ""))
+                return f"${price:.2f}"
+            except:
+                return "NA"
+    return "NA"
+
 
 def show_info_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() != "":

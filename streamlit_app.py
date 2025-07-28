@@ -192,6 +192,15 @@ if page == "📊 세일즈 대시보드":
     df_shein["order date"] = pd.to_datetime(df_shein["order processed on"], errors="coerce")
     df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
 
+    st.write("SHEIN 주문일(5개):", df_shein["order processed on"].head())
+st.write("TEMU 주문일(5개):", df_temu["purchase date"].head())
+st.write("파싱된 SHEIN order date(5개):", df_shein["order date"].head())
+st.write("파싱된 TEMU order date(5개):", df_temu["order date"].head())
+st.write("SHEIN qty(5개):", df_shein["qty"].head())
+st.write("TEMU qty(5개):", df_temu["qty"].head())
+st.write("SHEIN sales(5개):", df_shein["sales"].head())
+st.write("TEMU sales(5개):", df_temu["sales"].head())
+
     # 통합
     df_shein["platform"] = "SHEIN"
     df_temu["platform"] = "TEMU"

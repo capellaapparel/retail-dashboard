@@ -54,31 +54,33 @@ def get_latest_shein_price(df_sales, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
+    # 모든 컬럼 소문자화
     df_temu.columns = [c.lower().strip() for c in df_temu.columns]
+    # 디버깅 출력
     st.write("TEMU Product Number 유니크:", df_temu['product number'].unique())
     st.write("선택된 Product Number:", product_number)
-    # 필수 컬럼 체크
-    required_cols = ["product number", "base price total", "purchase date", "order item status"]
-    for col in required_cols:
-        if col not in df_temu.columns:
-            return "NA"
+    
+    # Cancelled 제외
     filtered = df_temu[
-        (df_temu["product number"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()) &
-        (df_temu["order item status"].astype(str).str.lower().str.strip() != "cancelled")
+        (df_temu['product number'].astype(str).str.strip().str.upper() == str(product_number).strip().upper())
+        & (~df_temu['order item status'].astype(str).str.lower().str.contains("cancelled"))
     ]
-    if not filtered.empty:
-        filtered = filtered.copy()
-        filtered["order date"] = pd.to_datetime(filtered["purchase date"], errors="coerce")
-        filtered = filtered.dropna(subset=["order date"])
-        if not filtered.empty:
-            latest = filtered.sort_values("order date").iloc[-1]
-            price = latest["base price total"]
-            try:
-                price = float(str(price).replace("$", "").replace(",", ""))
-                return f"${price:.2f}"
-            except:
-                return "NA"
-    return "NA"
+    if filtered.empty:
+        return "NA"
+
+    # 날짜 정렬 및 최신값
+    filtered = filtered.copy()
+    filtered['order date'] = pd.to_datetime(filtered['purchase date'], errors='coerce')
+    filtered = filtered.dropna(subset=['order date'])
+    if filtered.empty:
+        return "NA"
+    latest = filtered.sort_values('order date').iloc[-1]
+    price = latest.get('base price total')
+    try:
+        price_float = float(str(price).replace("$", "").replace(",", ""))
+        return f"${price_float:.2f}"
+    except:
+        return "NA"
 
 def show_info_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() != "":

@@ -79,7 +79,7 @@ def get_latest_temu_price(df_temu, product_number):
     # 날짜 직접 파싱!
     filtered = filtered.copy()
     filtered["order date"] = filtered["purchase date"].apply(parse_temudate)
-    st.write("==[ order date null 갯수 ]==", filtered["order date"].isnull().sum())
+  
     filtered = filtered.dropna(subset=["order date"])
     if filtered.empty:
         return "NA"

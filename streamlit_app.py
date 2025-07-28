@@ -72,7 +72,7 @@ def get_latest_temu_price(df_temu, product_number):
     filtered = df_temu[
         df_temu["product number"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
     ]
-    st.write("==[ 필터 후 row 수 ]==", len(filtered))
+    
     if filtered.empty:
         return "NA"
 
@@ -85,14 +85,14 @@ def get_latest_temu_price(df_temu, product_number):
         return "NA"
 
     latest = filtered.sort_values("order date").iloc[-1]
-    st.write("==[ 최신 row dict ]==", latest.to_dict())
+  
     price = latest.get("base price total")
-    st.write("==[ 최신 price 값 ]==", price)
+   
     try:
         price = float(str(price).replace("$", "").replace(",", ""))
         return f"${price:.2f}"
     except Exception as ex:
-        st.write("==[ 가격 변환 에러 ]==", price, ex)
+    
         return "NA"
 
 

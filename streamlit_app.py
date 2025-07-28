@@ -110,16 +110,15 @@ if page == "📖 스타일 정보 조회":
         else:
             selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
             row = df_info[df_info["product number"] == selected].iloc[0]
-            image_url = str(row.get("image", "")).strip()
+            image_url = str(row.get("image", "")).strip()  # 소문자 "image"로!
 
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
             with col1:
-                image_url = row.get("image", "")
-                if pd.notna(image_url) and isinstance(image_url, str) and image_url.strip().lower().startswith("http"):
-                st.image(image_url.strip(), width=300)
+                if image_url:
+                    st.image(image_url, width=300)
                 else:
-                st.caption("이미지 없음")
+                    st.caption("이미지 없음")
             with col2:
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['product number']}")

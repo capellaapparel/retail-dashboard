@@ -104,21 +104,23 @@ if page == "📖 스타일 정보 조회":
 
     style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
     if style_input:
-        matched = df_info[df_info["product number"].astype(str).str.contains(style_input, case=False, na=False)]
-        if matched.empty:
-            st.warning("❌ 해당 스타일을 찾을 수 없습니다.")
-        else:
-            selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
-            row = df_info[df_info["product number"] == selected].iloc[0]
-            image_url = str(row.get("image", "")).strip()  # 소문자 "image"로!
+    matched = df_info[df_info["product number"].astype(str).str.contains(style_input, case=False, na=False)]
+    if matched.empty:
+        st.warning("❌ 해당 스타일을 찾을 수 없습니다.")
+    else:
+        selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
+        row = df_info[df_info["product number"] == selected].iloc[0]
+        image_url = str(row.get("image", "")).strip()
 
-            st.markdown("---")
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                if image_url:
-                    st.image(image_url, width=300)
-                else:
-                    st.caption("이미지 없음")
+        st.write("DEBUG:", image_url)  # ← 실제 이미지 URL 값을 꼭 찍어보세요
+
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            # **여기서 반드시 http로 시작하는지 확인**
+            if image_url.startswith("http"):
+                st.image(image_url, width=300)
+            else:
+                st.caption("이미지 없음")
             with col2:
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['product number']}")

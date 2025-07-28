@@ -115,7 +115,7 @@ if page == "📖 스타일 정보 조회":
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
             with col1:
-                image_url = str(row.get("image", "")).strip()  
+                image_url = str(row.get("image", ""))
                 if image_url:
                     st.image(image_url, width=400)
                 else:

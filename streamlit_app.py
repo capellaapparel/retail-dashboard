@@ -102,8 +102,8 @@ if page == "📖 스타일 정보 조회":
         st.error("❌ 데이터 로드 실패: " + str(e))
         st.stop()
 
-    style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
-    if style_input:
+   style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
+if style_input:
     matched = df_info[df_info["product number"].astype(str).str.contains(style_input, case=False, na=False)]
     if matched.empty:
         st.warning("❌ 해당 스타일을 찾을 수 없습니다.")
@@ -112,12 +112,10 @@ if page == "📖 스타일 정보 조회":
         row = df_info[df_info["product number"] == selected].iloc[0]
         image_url = str(row.get("image", "")).strip()
 
-        st.write("DEBUG:", image_url)  # ← 실제 이미지 URL 값을 꼭 찍어보세요
-
+        st.markdown("---")
         col1, col2 = st.columns([1, 2])
         with col1:
-            # **여기서 반드시 http로 시작하는지 확인**
-            if image_url.startswith("http"):
+            if image_url and image_url.startswith("http"):
                 st.image(image_url, width=300)
             else:
                 st.caption("이미지 없음")

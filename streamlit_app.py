@@ -115,11 +115,11 @@ if page == "📖 스타일 정보 조회":
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
             with col1:
-    image_url = row.get("image", "")
-    if pd.notna(image_url) and isinstance(image_url, str) and image_url.strip().lower().startswith("http"):
-        st.image(image_url.strip(), width=300)
-    else:
-        st.caption("이미지 없음")
+                image_url = row.get("image", "")
+                if pd.notna(image_url) and isinstance(image_url, str) and image_url.strip().lower().startswith("http"):
+                st.image(image_url.strip(), width=300)
+                else:
+                st.caption("이미지 없음")
             with col2:
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['product number']}")

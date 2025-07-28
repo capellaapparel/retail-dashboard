@@ -59,25 +59,7 @@ def get_latest_shein_price(df_sales, product_number):
                 return "NA"
     return "NA"
 
-def get_latest_temu_price(df_temu, product_number):
-    df_temu.columns = [c.lower().strip() for c in df_temu.columns]
-    filtered = df_temu[
-        df_temu['product number'].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
-    ]
-    if not filtered.empty:
-       
-    filtered = filtered.copy()
-    filtered['order date'] = pd.to_datetime(filtered['purchase date'], errors='coerce')
-    filtered = filtered.dropna(subset=['order date'])
-    if not filtered.empty:
-       
-    latest = filtered.sort_values('order date').iloc[-1]
-    price = latest.get('base price total')
-    try:
-        price_float = float(str(price).replace("$", "").replace(",", ""))
-        return f"${price_float:.2f}"
-    except:
-        return "NA"
+
 
 # --- 스타일 정보 조회 페이지 ---
 if page == "📖 스타일 정보 조회":

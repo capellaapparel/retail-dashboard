@@ -151,7 +151,7 @@ if page == "📖 스타일 정보 조회":
                 st.markdown(f"**Product Number:** {row['Product Number']}")
                 show_info_block("ERP PRICE", row.get("ERP PRICE", ""))
                 # 가격: TEMU → SHEIN 순서, 값 없으면 NA
-                latest_temu = get_latest_temu_price(df_temu, selected_product_number)
+                latest_temu = get_latest_temu_price(df_temu, selected)
                 latest_shein = get_latest_shein_price(df_shein, selected)
                 st.markdown(f"**TEMU PRICE:** {latest_temu}")
                 st.markdown(f"**SHEIN PRICE:** {latest_shein}")

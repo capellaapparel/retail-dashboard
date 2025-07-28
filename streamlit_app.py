@@ -55,6 +55,8 @@ def get_latest_shein_price(df_sales, product_number):
 
 def get_latest_temu_price(df_temu, product_number):
     df_temu.columns = [c.lower().strip() for c in df_temu.columns]
+    st.write("TEMU Product Number 유니크:", df_temu['product number'].unique())
+    st.write("선택된 Product Number:", product_number)
     # 필수 컬럼 체크
     required_cols = ["product number", "base price total", "purchase date", "order item status"]
     for col in required_cols:

@@ -40,6 +40,26 @@ def show_info_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() != "":
         st.markdown(f"**{label}:** {value}")
 
+def get_latest_temu_price(df_temu, product_number):
+    df_sales.columns = [c.lower().strip() for c in df_sales.columns]
+    filtered = df_temu[
+        df_temu["product number"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
+    ]
+    if not filtered.empty:
+        filtered = filtered.copy()
+        filtered["order date"] = pd.to_datetime(filtered["purchase date"], errors="coerce")
+        filtered = filtered.dropna(subset=["order date"])
+        if not filtered.empty:
+            latest = filtered.sort_values("order date").iloc[-1]
+            price = latest["base price total"]
+            try:
+                price = float(str(price).replace("$", "").replace(",", ""))
+                return f"${price:.2f}"
+            except:
+                return "NA"
+    return "NA"
+
+
 def get_latest_shein_price(df_sales, product_number):
     df_sales.columns = [c.lower().strip() for c in df_sales.columns]
     filtered = df_sales[

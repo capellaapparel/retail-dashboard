@@ -85,6 +85,7 @@ def get_latest_temu_price(df_temu, product_number):
 if page == "📖 스타일 정보 조회":
     try:
         df_info = load_google_sheet(PRODUCT_SHEET)
+        df_info.columns = [c.lower().strip() for c in df_info.columns]
         df_img = load_images()
         df_shein = load_google_sheet(SHEIN_SHEET)
         df_temu = load_google_sheet(TEMU_SHEET)

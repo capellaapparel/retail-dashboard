@@ -36,16 +36,8 @@ def load_google_sheet(sheet_name):
     df.columns = [c.lower().strip() for c in df.columns]
     return df
 
-def parse_temudate(dt):
-    try:
-        # 예시: 'Jul 22, 2025, 1:04 am PDT(UTC-7)'
-        return parser.parse(str(dt).split('(')[0].strip(), fuzzy=True)
-    except Exception:
-        return pd.NaT
-
 def parse_sheindate(dt):
     try:
-        # 예시: '2025-06-10', '2025/06/10', '06/10/2025', 등 자동인식
         return pd.to_datetime(str(dt), errors="coerce", infer_datetime_format=True)
     except Exception:
         return pd.NaT
@@ -53,7 +45,6 @@ def parse_sheindate(dt):
 def show_price_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() not in ("", "nan", "NaN"):
         try:
-            # 이미 $로 시작하면 그대로, 아니면 붙임
             v = str(value).strip()
             if v.startswith("$"):
                 price = v
@@ -99,6 +90,9 @@ def get_latest_temu_price(df_temu, product_number):
                 return "NA"
     return "NA"
 
+# =========================
+#  스타일 정보 조회 페이지
+# =========================
 if page == "📖 스타일 정보 조회":
     try:
         df_info = load_google_sheet(PRODUCT_SHEET)
@@ -116,13 +110,11 @@ if page == "📖 스타일 정보 조회":
         else:
             selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
             row = df_info[df_info["product number"] == selected].iloc[0]
-            # 이미지 컬럼명 반드시 소문자 "image"로!
-            image_url = str(row.get("image", "")).strip()
+            image_url = str(row.get("image", "")).strip()    # 반드시 소문자 "image"로!
 
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
             with col1:
-                # 이미지는 url이 존재하고 http로 시작하면 표시
                 if image_url and image_url.startswith("http"):
                     st.image(image_url, width=400)
                 else:
@@ -187,10 +179,10 @@ if page == "📖 스타일 정보 조회":
             else:
                 st.caption("사이즈 정보가 없습니다.")
 
-
-# --- 세일즈 대시보드 페이지 ---
-if page == "세일즈 대시보드":
-    # === 데이터 로딩 ===
+# =========================
+#     세일즈 대시보드
+# =========================
+if page == "📊 세일즈 대시보드":
     try:
         df_shein = load_google_sheet(SHEIN_SHEET)
         df_temu = load_google_sheet(TEMU_SHEET)
@@ -198,11 +190,9 @@ if page == "세일즈 대시보드":
         st.error("❌ 데이터 로드 실패: " + str(e))
         st.stop()
 
-    # ======= 날짜 파싱 (각자 포맷에 맞게) =======
     df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
-    df_temu["order date"]  = df_temu["purchase date"].apply(parse_temudate)
+    df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
 
-    # ======= 필수 컬럼만 남기기 및 표준화 =======
     shein_sales = df_shein.rename(columns={
         "product description": "product number",
         "qty": "qty",
@@ -221,11 +211,9 @@ if page == "세일즈 대시보드":
     temu_sales["qty"] = pd.to_numeric(temu_sales["qty"], errors="coerce").fillna(0)
     temu_sales["sales"] = temu_sales["qty"] * pd.to_numeric(temu_sales["unit price"], errors="coerce").fillna(0)
 
-    # ======= 통합 =======
     df_all = pd.concat([shein_sales, temu_sales], ignore_index=True)
     df_all = df_all[df_all["order date"].notna()]
 
-    # ======= 대시보드 필터 =======
     st.sidebar.subheader("플랫폼")
     platform_filter = st.sidebar.radio("플랫폼", ["BOTH", "SHEIN", "TEMU"], horizontal=True)
     st.sidebar.subheader("조회 기간")
@@ -233,13 +221,11 @@ if page == "세일즈 대시보드":
     max_date = df_all["order date"].max()
     date_range = st.sidebar.date_input("기간", (min_date, max_date))
 
-    # ======= 필터링 =======
     df_view = df_all.copy()
     if platform_filter != "BOTH":
         df_view = df_view[df_view["platform"] == platform_filter]
     df_view = df_view[(df_view["order date"] >= pd.to_datetime(date_range[0])) & (df_view["order date"] <= pd.to_datetime(date_range[1]))]
 
-    # ======= KPI =======
     total_qty = int(df_view["qty"].sum())
     total_sales = df_view["sales"].sum()
     order_count = df_view.shape[0]
@@ -249,22 +235,15 @@ if page == "세일즈 대시보드":
     colB.metric("총 매출", f"${total_sales:,.2f}")
     colC.metric("주문건수", f"{order_count:,}")
 
-    # ======= 일별 추이 =======
     st.subheader("일별 판매 추이")
     daily = df_view.groupby("order date").agg({"qty": "sum", "sales": "sum"}).reset_index()
     st.line_chart(daily.set_index("order date")[["qty", "sales"]])
 
-    # ======= 베스트셀러 TOP10 =======
     st.subheader("베스트셀러 TOP10")
     best = df_view.groupby("product number").agg({"qty": "sum", "sales": "sum"}).reset_index()
     best = best.sort_values("qty", ascending=False).head(10)
     st.dataframe(best)
 
-    # ======= 플랫폼별 매출 비율 =======
     st.subheader("플랫폼별 매출 비율")
     platform_stats = df_view.groupby("platform")["sales"].sum()
     st.bar_chart(platform_stats)
-
-    # ======= DEBUG: 실제 날짜/데이터 확인용 =======
-    # st.write(df_view[["order date", "qty", "sales", "platform"]].sort_values("order date").tail(30))
-

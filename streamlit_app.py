@@ -49,39 +49,44 @@ def get_latest_shein_price(df_sales, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
+    """
+    df_temu: TEMU_SALES DataFrame
+    product_number: ex) 'BTP2955X'
+    """
+    # 컬럼명 소문자화 및 공백제거
     df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
-    style_col = "contribution sku"
-    status_col = "order item status"
-    date_col = "purchase date"
-    price_col = "base price total"
-    if style_col not in df_temu.columns or status_col not in df_temu.columns or price_col not in df_temu.columns:
+
+    # 필수 컬럼 체크
+    if 'product number' not in df_temu.columns or 'base price total' not in df_temu.columns or 'purchase date' not in df_temu.columns:
         return "NA"
-    product_number = str(product_number).strip().upper()
-    df_temu[style_col] = df_temu[style_col].astype(str).str.strip().str.upper()
-    df_temu[status_col] = df_temu[status_col].astype(str).str.strip().str.lower()
-    df_temu[date_col] = df_temu[date_col].astype(str).str.strip()
+
+    # 필터: Product Number로 정확하게 일치하는 행 중에서 (Shipped/Delivered 등 정상 오더만)
     filtered = df_temu[
-        df_temu[style_col].str.startswith(product_number)
-        & (df_temu[status_col] != "cancelled")
+        (df_temu['product number'].astype(str).str.strip().str.upper() == str(product_number).strip().upper()) &
+        (df_temu['order item status'].astype(str).str.lower().str.strip() != "cancelled")
     ]
-    st.write("====TEMU 필터 rows 수:", len(filtered))
-    st.write("====TEMU 샘플 rows:", filtered[[style_col, price_col, date_col]].head(5))
-    if not filtered.empty:
-        filtered = filtered.copy()
-        filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
-        filtered = filtered.dropna(subset=["Order Date", price_col])
-        if not filtered.empty:
-            latest = filtered.sort_values("Order Date").iloc[-1]
-            price = latest.get(price_col)
-            st.write("====TEMU 최종 row 샘플:", latest)
-            try:
-                if pd.isna(price) or price in ("", "NA", "nan"):
-                    return "NA"
-                return f"${float(str(price).replace('$', '').replace(',', '')):.2f}"
-            except Exception as ex:
-                st.write("TEMU price 변환 실패", price, ex)
-                return "NA"
-    return "NA"
+
+    # 값이 없으면 NA 반환
+    if filtered.empty:
+        return "NA"
+
+    # 날짜 변환 및 최신순 정렬
+    filtered = filtered.copy()
+    filtered["Order Date"] = pd.to_datetime(filtered['purchase date'], errors="coerce")
+    filtered = filtered.dropna(subset=["Order Date"])
+    if filtered.empty:
+        return "NA"
+
+    # 최신 주문 row
+    latest = filtered.sort_values("Order Date").iloc[-1]
+    price = latest.get('base price total')
+    try:
+        # 가격 문자열/숫자 모두 변환 지원
+        price_float = float(str(price).replace("$", "").replace(",", ""))
+        return f"${price_float:.2f}"
+    except Exception as ex:
+        return "NA"
+
 
 
 

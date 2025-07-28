@@ -66,7 +66,7 @@ def get_latest_temu_price(df_temu, product_number):
         df_temu['product number'].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
     ]
     st.write("==[ 필터 후 row 수 ]==", len(filtered))
-    st.write("==[ 필터 후 데이터 샘플 ]==", filtered.head())
+    st.write("==[ 필터 후 데이터 샘플 dict ]==", filtered.head(3).to_dict())  # 여기만 to_dict() 추가!
 
     if filtered.empty:
         return "NA"
@@ -79,15 +79,17 @@ def get_latest_temu_price(df_temu, product_number):
         return "NA"
 
     latest = filtered.sort_values("order date").iloc[-1]
-    st.write("==[ 가장 최신 row ]==", latest)
+    st.write("==[ 가장 최신 row dict ]==", latest.to_dict())   # to_dict()로 안전하게
     price = latest["base price total"]
     st.write("==[ 최신 price 값 ]==", price)
     try:
         price = float(str(price).replace("$", "").replace(",", ""))
+        st.write("==[ 최종 TEMU PRICE ]==", f"${price:.2f}")
         return f"${price:.2f}"
     except Exception as ex:
         st.write("==[ 가격 변환 에러 ]==", price, ex)
         return "NA"
+
 if page == "📖 스타일 정보 조회":
     try:
         df_info = load_google_sheet(PRODUCT_SHEET)

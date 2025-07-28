@@ -26,21 +26,26 @@ def load_google_sheet(sheet_name):
     client = gspread.authorize(creds)
     sheet = client.open_by_url(GOOGLE_SHEET_URL).worksheet(sheet_name)
     data = sheet.get_all_records()
-    return pd.DataFrame(data)
+    df = pd.DataFrame(data)
+    df.columns = [c.lower().strip() for c in df.columns]   # 컬럼명 확실하게 소문자+공백제거
+    return df
 
 @st.cache_data(show_spinner=False)
 def load_images():
     return pd.read_csv(IMAGE_CSV)
 
 def get_latest_shein_price(df_sales, product_number):
-    filtered = df_sales[df_sales["Product Description"].astype(str).str.strip().str.upper() == str(product_number).upper()]
+    df_sales.columns = [c.lower().strip() for c in df_sales.columns]
+    filtered = df_sales[
+        df_sales["product description"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
+    ]
     if not filtered.empty:
         filtered = filtered.copy()
-        filtered["Order Date"] = pd.to_datetime(filtered["Order Processed On"], errors="coerce")
-        filtered = filtered.dropna(subset=["Order Date"])
+        filtered["order date"] = pd.to_datetime(filtered["order processed on"], errors="coerce")
+        filtered = filtered.dropna(subset=["order date"])
         if not filtered.empty:
-            latest = filtered.sort_values("Order Date").iloc[-1]
-            price = latest["Product Price"]
+            latest = filtered.sort_values("order date").iloc[-1]
+            price = latest["product price"]
             try:
                 price = float(str(price).replace("$", "").replace(",", ""))
                 return f"${price:.2f}"
@@ -49,22 +54,22 @@ def get_latest_shein_price(df_sales, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
-    # 컬럼명 소문자화
-    df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
-    # 반드시 완전 일치만! (쉬인 방식)
+    df_temu.columns = [c.lower().strip() for c in df_temu.columns]
+    # 필수 컬럼 체크
+    required_cols = ["product number", "base price total", "purchase date", "order item status"]
+    for col in required_cols:
+        if col not in df_temu.columns:
+            return "NA"
     filtered = df_temu[
-        df_temu["product number"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
+        (df_temu["product number"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()) &
+        (df_temu["order item status"].astype(str).str.lower().str.strip() != "cancelled")
     ]
-    # 정상(취소아닌) 주문만
-    if 'order item status' in df_temu.columns:
-        filtered = filtered[filtered["order item status"].astype(str).str.lower().str.strip() != "cancelled"]
-
     if not filtered.empty:
         filtered = filtered.copy()
-        filtered["Order Date"] = pd.to_datetime(filtered["purchase date"], errors="coerce")
-        filtered = filtered.dropna(subset=["Order Date"])
+        filtered["order date"] = pd.to_datetime(filtered["purchase date"], errors="coerce")
+        filtered = filtered.dropna(subset=["order date"])
         if not filtered.empty:
-            latest = filtered.sort_values("Order Date").iloc[-1]
+            latest = filtered.sort_values("order date").iloc[-1]
             price = latest["base price total"]
             try:
                 price = float(str(price).replace("$", "").replace(",", ""))
@@ -72,7 +77,6 @@ def get_latest_temu_price(df_temu, product_number):
             except:
                 return "NA"
     return "NA"
-
 
 def show_info_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() != "":
@@ -91,12 +95,12 @@ if page == "📖 스타일 정보 조회":
 
     style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
     if style_input:
-        matched = df_info[df_info["Product Number"].astype(str).str.contains(style_input, case=False, na=False)]
+        matched = df_info[df_info["product number"].astype(str).str.contains(style_input, case=False, na=False)]
         if matched.empty:
             st.warning("❌ 해당 스타일을 찾을 수 없습니다.")
         else:
-            selected = st.selectbox("스타일 선택", matched["Product Number"].astype(str))
-            row = df_info[df_info["Product Number"] == selected].iloc[0]
+            selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
+            row = df_info[df_info["product number"] == selected].iloc[0]
             img_row = df_img[df_img["Product Number"] == selected]
             image_url = img_row.iloc[0]["First Image"] if not img_row.empty else None
 
@@ -109,17 +113,18 @@ if page == "📖 스타일 정보 조회":
                     st.caption("이미지 없음")
             with col2:
                 st.subheader(row.get("default product name(en)", ""))
-                st.markdown(f"**Product Number:** {row['Product Number']}")
-                show_info_block("ERP PRICE", row.get("ERP PRICE", ""))
-                # TEMU → SHEIN 순으로 가격 표시
+                st.markdown(f"**Product Number:** {row['product number']}")
+                show_info_block("ERP PRICE", row.get("erp price", ""))
+                # Temu → Shein 가격 모두 동일하게 출력 (값 없으면 NA)
                 latest_temu = get_latest_temu_price(df_temu, selected)
                 latest_shein = get_latest_shein_price(df_shein, selected)
                 st.markdown(f"**TEMU PRICE:** {latest_temu}")
                 st.markdown(f"**SHEIN PRICE:** {latest_shein}")
+                # 빈 정보 생략
                 for col, label in [
-                    ("SLEEVE", "SLEEVE"), ("NECKLINE", "NECKLINE"), ("LENGTH", "LENGTH"),
-                    ("FIT", "FIT"), ("DETAIL", "DETAIL"), ("STYLE MOOD", "STYLE MOOD"),
-                    ("MODEL", "MODEL"), ("NOTES", "NOTES")
+                    ("sleeve", "SLEEVE"), ("neckline", "NECKLINE"), ("length", "LENGTH"),
+                    ("fit", "FIT"), ("detail", "DETAIL"), ("style mood", "STYLE MOOD"),
+                    ("model", "MODEL"), ("notes", "NOTES")
                 ]:
                     val = row.get(col, "")
                     if pd.notna(val) and str(val).strip() not in ("", "nan", "NaN"):
@@ -131,9 +136,9 @@ if page == "📖 스타일 정보 조회":
             def has_size_data(*args):
                 return any(str(v).strip() not in ["", "0", "0.0"] for v in args)
 
-            top1_vals = (row.get("TOP1_CHEST", ""), row.get("TOP1_LENGTH", ""), row.get("TOP1_SLEEVE", ""))
-            top2_vals = (row.get("TOP2_CHEST", ""), row.get("TOP2_LENGTH", ""), row.get("TOP2_SLEEVE", ""))
-            bottom_vals = (row.get("BOTTOM_WAIST", ""), row.get("BOTTOM_HIP", ""), row.get("BOTTOM_LENGTH", ""), row.get("BOTTOM_INSEAM", ""))
+            top1_vals = (row.get("top1_chest", ""), row.get("top1_length", ""), row.get("top1_sleeve", ""))
+            top2_vals = (row.get("top2_chest", ""), row.get("top2_length", ""), row.get("top2_sleeve", ""))
+            bottom_vals = (row.get("bottom_waist", ""), row.get("bottom_hip", ""), row.get("bottom_length", ""), row.get("bottom_inseam", ""))
             html_parts = []
             if has_size_data(*top1_vals):
                 html_parts.append(f"""

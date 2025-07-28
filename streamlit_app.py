@@ -49,43 +49,43 @@ def get_latest_shein_price(df_sales, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
-    """
-    df_temu: TEMU_SALES DataFrame
-    product_number: ex) 'BTP2955X'
-    """
-    # 컬럼명 소문자화 및 공백제거
     df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
 
-    # 필수 컬럼 체크
     if 'product number' not in df_temu.columns or 'base price total' not in df_temu.columns or 'purchase date' not in df_temu.columns:
+        st.warning("컬럼명 문제: product number, base price total, purchase date 필수!")
         return "NA"
 
-    # 필터: Product Number로 정확하게 일치하는 행 중에서 (Shipped/Delivered 등 정상 오더만)
+    st.write("TEMU Product Number 전체:", df_temu['product number'].unique())
+    st.write("입력 product_number:", product_number)
+
     filtered = df_temu[
         (df_temu['product number'].astype(str).str.strip().str.upper() == str(product_number).strip().upper()) &
         (df_temu['order item status'].astype(str).str.lower().str.strip() != "cancelled")
     ]
+    st.write("====TEMU Product Number 필터 rows 샘플====")
+    st.write(filtered[['product number', 'base price total', 'purchase date', 'order item status']].head())
 
-    # 값이 없으면 NA 반환
     if filtered.empty:
         return "NA"
 
-    # 날짜 변환 및 최신순 정렬
     filtered = filtered.copy()
     filtered["Order Date"] = pd.to_datetime(filtered['purchase date'], errors="coerce")
     filtered = filtered.dropna(subset=["Order Date"])
     if filtered.empty:
         return "NA"
 
-    # 최신 주문 row
     latest = filtered.sort_values("Order Date").iloc[-1]
     price = latest.get('base price total')
+    st.write("TEMU 최신 row:", latest)
+    st.write("TEMU 최신 price:", price)
+
     try:
-        # 가격 문자열/숫자 모두 변환 지원
         price_float = float(str(price).replace("$", "").replace(",", ""))
         return f"${price_float:.2f}"
     except Exception as ex:
+        st.write("TEMU 변환 에러:", price, ex)
         return "NA"
+
 
 
 

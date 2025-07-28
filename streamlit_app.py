@@ -3,6 +3,14 @@ import pandas as pd
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from dateutil import parser
+
+def parse_temudate(dt):
+    try:
+        # 예시: 'Jul 22, 2025, 1:04 am PDT(UTC-7)'
+        return parser.parse(dt.split('(')[0].strip(), fuzzy=True)
+    except Exception as ex:
+        return pd.NaT
 
 # 시트명/파일명
 PRODUCT_SHEET = "PRODUCT_INFO"
@@ -60,35 +68,33 @@ def get_latest_shein_price(df_shein, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
-    st.write("==[ TEMU 전체 product number ]==", df_temu['product number'].unique())
-    st.write("==[ 입력값 ]==", product_number)
+    df_temu.columns = [c.lower().strip() for c in df_temu.columns]
     filtered = df_temu[
-        df_temu['product number'].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
+        df_temu["product number"].astype(str).str.strip().str.upper() == str(product_number).strip().upper()
     ]
     st.write("==[ 필터 후 row 수 ]==", len(filtered))
-    st.write("==[ 필터 후 데이터 샘플 dict ]==", filtered.head(3).to_dict())  # 여기만 to_dict() 추가!
-
     if filtered.empty:
         return "NA"
 
+    # 날짜 직접 파싱!
     filtered = filtered.copy()
-    filtered["order date"] = pd.to_datetime(filtered["purchase date"], errors="coerce")
+    filtered["order date"] = filtered["purchase date"].apply(parse_temudate)
+    st.write("==[ order date null 갯수 ]==", filtered["order date"].isnull().sum())
     filtered = filtered.dropna(subset=["order date"])
     if filtered.empty:
-        st.write("==[ order date drop 후 empty ]==")
         return "NA"
 
     latest = filtered.sort_values("order date").iloc[-1]
-    st.write("==[ 가장 최신 row dict ]==", latest.to_dict())   # to_dict()로 안전하게
-    price = latest["base price total"]
+    st.write("==[ 최신 row dict ]==", latest.to_dict())
+    price = latest.get("base price total")
     st.write("==[ 최신 price 값 ]==", price)
     try:
         price = float(str(price).replace("$", "").replace(",", ""))
-        st.write("==[ 최종 TEMU PRICE ]==", f"${price:.2f}")
         return f"${price:.2f}"
     except Exception as ex:
         st.write("==[ 가격 변환 에러 ]==", price, ex)
         return "NA"
+
 
 if page == "📖 스타일 정보 조회":
     try:

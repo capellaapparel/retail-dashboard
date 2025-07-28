@@ -8,7 +8,7 @@ from dateutil import parser
 def parse_temudate(dt):
     try:
         return parser.parse(str(dt).split('(')[0].strip(), fuzzy=True)
-    except Exception:
+    except Exception as ex:
         return pd.NaT
 
 PRODUCT_SHEET = "PRODUCT_INFO"

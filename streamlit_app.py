@@ -116,12 +116,14 @@ if page == "📖 스타일 정보 조회":
         else:
             selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
             row = df_info[df_info["product number"] == selected].iloc[0]
-            image_url = str(row.get("IMAGE", "")).strip()  # 소문자 "image"로!
+            # 이미지 컬럼명 반드시 소문자 "image"로!
+            image_url = str(row.get("image", "")).strip()
 
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
             with col1:
-                if image_url:
+                # 이미지는 url이 존재하고 http로 시작하면 표시
+                if image_url and image_url.startswith("http"):
                     st.image(image_url, width=400)
                 else:
                     st.caption("이미지 없음")

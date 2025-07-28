@@ -102,23 +102,24 @@ if page == "📖 스타일 정보 조회":
         st.error("❌ 데이터 로드 실패: " + str(e))
         st.stop()
 
-   style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
-if style_input:
-    matched = df_info[df_info["product number"].astype(str).str.contains(style_input, case=False, na=False)]
-    if matched.empty:
-        st.warning("❌ 해당 스타일을 찾을 수 없습니다.")
-    else:
-        selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
-        row = df_info[df_info["product number"] == selected].iloc[0]
-        image_url = str(row.get("image", "")).strip()
+    style_input = st.text_input("🔍 스타일 번호를 입력하세요:", "")
+    if style_input:
+        matched = df_info[df_info["product number"].astype(str).str.contains(style_input, case=False, na=False)]
+        if matched.empty:
+            st.warning("❌ 해당 스타일을 찾을 수 없습니다.")
+        else:
+            selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
+            row = df_info[df_info["product number"] == selected].iloc[0]
+            image_url = str(row.get("image", "")).strip()
 
-        st.markdown("---")
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            if image_url and image_url.startswith("http"):
-                st.image(image_url, width=300)
-            else:
-                st.caption("이미지 없음")
+            st.markdown("---")
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                # ** 여기서 반드시 http/https 로 시작하는지 체크 (가끔 구글시트에서 빈칸일 때 있음) **
+                if image_url and isinstance(image_url, str) and image_url.startswith("http"):
+                    st.image(image_url, width=300)
+                else:
+                    st.caption("이미지 없음")
             with col2:
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['product number']}")

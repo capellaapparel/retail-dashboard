@@ -49,28 +49,39 @@ def get_latest_shein_price(df_sales, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
+    # 컬럼명 정리
     df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
     style_col = "contribution sku"
     status_col = "order item status"
     date_col = "purchase date"
     price_col = "base price total"
-
-    if style_col not in df_temu.columns or status_col not in df_temu.columns:
-        st.write("❌ TEMU_SALES 필수 컬럼 없음! 현재 컬럼들:", df_temu.columns)
+    # 컬럼 체크
+    if style_col not in df_temu.columns or status_col not in df_temu.columns or price_col not in df_temu.columns:
         return "NA"
-
-    df_temu["temu_style"] = df_temu[style_col].astype(str).apply(lambda x: str(x).split('-')[0].strip().upper())
     product_number = str(product_number).strip().upper()
+    df_temu[style_col] = df_temu[style_col].astype(str).str.strip().str.upper()
     df_temu[status_col] = df_temu[status_col].astype(str).str.strip().str.lower()
     df_temu[date_col] = df_temu[date_col].astype(str).str.strip()
 
-    filtered = df_temu[(df_temu["temu_style"] == product_number) & (df_temu[status_col] != "cancelled")]
-    filtered = filtered.copy()
-    filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
-    filtered = filtered.dropna(subset=["Order Date"])
-    filtered = filtered.sort_values("Order Date", ascending=False)
+    # --- 핵심! startswith로 변경 ---
+    filtered = df_temu[
+        df_temu[style_col].str.startswith(product_number)
+        & (df_temu[status_col] != "cancelled")
+    ]
+    if not filtered.empty:
+        filtered = filtered.copy()
+        filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
+        filtered = filtered.dropna(subset=["Order Date"])
+        if not filtered.empty:
+            # 최신 거래 가져오기
+            latest = filtered.sort_values("Order Date").iloc[-1]
+            price = latest.get(price_col)
+            try:
+                return f"${float(price):.2f}"
+            except:
+                return "NA"
+    return "NA"
 
-    st.write("====TEMU 최종 rows====", filtered[[style_col, price_col, date_col]].head(10))  # 필터된 row 10개 모두 보여줌
 
     for idx, row in filtered.iterrows():
         price = row.get(price_col)

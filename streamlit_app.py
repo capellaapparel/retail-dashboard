@@ -99,7 +99,7 @@ if page == "📖 스타일 정보 조회":
             col1, col2 = st.columns([1, 2])
             with col1:
                 if image_url:
-                    st.image(image_url, width=300)
+                    st.image(image_url, width=500)
                 else:
                     st.caption("이미지 없음")
             with col2:

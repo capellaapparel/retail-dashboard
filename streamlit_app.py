@@ -49,7 +49,6 @@ def get_latest_shein_price(df_sales, product_number):
     return "NA"
 
 def get_latest_temu_price(df_temu, product_number):
-    # 1. 컬럼명/값 정리
     df_temu = df_temu.rename(columns=lambda x: x.lower().strip())
     style_col = "contribution sku"
     status_col = "order item status"
@@ -61,27 +60,29 @@ def get_latest_temu_price(df_temu, product_number):
     df_temu[style_col] = df_temu[style_col].astype(str).str.strip().str.upper()
     df_temu[status_col] = df_temu[status_col].astype(str).str.strip().str.lower()
     df_temu[date_col] = df_temu[date_col].astype(str).str.strip()
-
-    # 2. startswith로 매칭
     filtered = df_temu[
         df_temu[style_col].str.startswith(product_number)
         & (df_temu[status_col] != "cancelled")
     ]
     st.write("====TEMU 필터 rows 수:", len(filtered))
+    st.write("====TEMU 샘플 rows:", filtered[[style_col, price_col, date_col]].head(5))
     if not filtered.empty:
         filtered = filtered.copy()
         filtered["Order Date"] = pd.to_datetime(filtered[date_col], errors="coerce")
-        filtered = filtered.dropna(subset=["Order Date"])
+        filtered = filtered.dropna(subset=["Order Date", price_col])
         if not filtered.empty:
             latest = filtered.sort_values("Order Date").iloc[-1]
             price = latest.get(price_col)
             st.write("====TEMU 최종 row 샘플:", latest)
             try:
-                return f"${float(price):.2f}"
+                if pd.isna(price) or price in ("", "NA", "nan"):
+                    return "NA"
+                return f"${float(str(price).replace('$', '').replace(',', '')):.2f}"
             except Exception as ex:
                 st.write("TEMU price 변환 실패", price, ex)
                 return "NA"
     return "NA"
+
 
 
 

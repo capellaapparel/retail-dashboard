@@ -39,11 +39,7 @@ def load_google_sheet(sheet_name):
     df.columns = [c.lower().strip() for c in df.columns]
     return df
 
-@st.cache_data(show_spinner=False)
-def load_images():
-    df = pd.read_csv(IMAGE_CSV)
-    df.columns = [c.lower().strip() for c in df.columns]
-    return df
+
 
 def show_info_block(label, value):
     if value not in ("", None, float("nan")) and str(value).strip() != "":
@@ -99,7 +95,6 @@ def get_latest_temu_price(df_temu, product_number):
 if page == "📖 스타일 정보 조회":
     try:
         df_info = load_google_sheet(PRODUCT_SHEET)
-        df_img = load_images()
         df_shein = load_google_sheet(SHEIN_SHEET)
         df_temu = load_google_sheet(TEMU_SHEET)
     except Exception as e:
@@ -114,8 +109,7 @@ if page == "📖 스타일 정보 조회":
         else:
             selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
             row = df_info[df_info["product number"] == selected].iloc[0]
-            img_row = df_img[df_img["product number"] == selected] if 'product number' in df_img.columns else None
-            image_url = img_row.iloc[0]["first image"] if (img_row is not None and not img_row.empty) else None
+            image_url = row.get("image", "")
 
             st.markdown("---")
             col1, col2 = st.columns([1, 2])
@@ -128,7 +122,6 @@ if page == "📖 스타일 정보 조회":
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['product number']}")
                 show_info_block("ERP PRICE", row.get("erp price", ""))
-                # 가격: Temu → Shein 순서, 값 없으면 NA
                 latest_temu = get_latest_temu_price(df_temu, selected)
                 latest_shein = get_latest_shein_price(df_shein, selected)
                 st.markdown(f"**TEMU PRICE:** {latest_temu}")

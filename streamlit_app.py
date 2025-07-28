@@ -36,9 +36,18 @@ def load_google_sheet(sheet_name):
     df.columns = [c.lower().strip() for c in df.columns]  # 모든 컬럼 소문자화
     return df
 
-def show_info_block(label, value):
-    if value not in ("", None, float("nan")) and str(value).strip() != "":
-        st.markdown(f"**{label}:** {value}")
+def show_price_block(label, value):
+    if value not in ("", None, float("nan")) and str(value).strip() not in ("", "nan", "NaN"):
+        try:
+            # 이미 $로 시작하면 그대로, 아니면 붙임
+            v = str(value).strip()
+            if v.startswith("$"):
+                price = v
+            else:
+                price = f"${v}"
+            st.markdown(f"**{label}:** {price}")
+        except:
+            st.markdown(f"**{label}:** {value}")
 
 def get_latest_shein_price(df_sales, product_number):
     filtered = df_sales[
@@ -105,7 +114,7 @@ if page == "📖 스타일 정보 조회":
             with col2:
                 st.subheader(row.get("default product name(en)", ""))
                 st.markdown(f"**Product Number:** {row['product number']}")
-                show_info_block("ERP PRICE", row.get("erp price", ""))
+                show_price_block("ERP PRICE", row.get("erp price", ""))
                 latest_temu = get_latest_temu_price(df_temu, selected)
                 latest_shein = get_latest_shein_price(df_shein, selected)
                 st.markdown(f"**TEMU PRICE:** {latest_temu}")

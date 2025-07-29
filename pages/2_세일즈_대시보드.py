@@ -1,15 +1,4 @@
-st.markdown("""
-    <style>
-    .center-container {
-        max-width: 1200px;
-        margin-left: auto !important;
-        margin-right: auto !important;
-        padding-left: 20px;
-        padding-right: 20px;
-    }
-    </style>
-    <div class='center-container'>
-""", unsafe_allow_html=True)
+
 
 import streamlit as st
 import pandas as pd
@@ -36,6 +25,19 @@ def load_google_sheet(sheet_name):
     df = pd.DataFrame(data)
     df.columns = [c.lower().strip() for c in df.columns]
     return df
+    
+st.markdown("""
+    <style>
+    .center-container {
+        max-width: 1200px;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        padding-left: 20px;
+        padding-right: 20px;
+    }
+    </style>
+    <div class='center-container'>
+""", unsafe_allow_html=True)
 
 def parse_temudate(dt):
     try:

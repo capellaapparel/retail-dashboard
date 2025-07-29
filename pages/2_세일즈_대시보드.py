@@ -85,28 +85,32 @@ def get_font_size(val):
 
 kpi_style = """
 <style>
-.kpi-flex {display:flex; flex-wrap:nowrap; gap:15px;}
+.kpi-flex {display:flex; flex-wrap:nowrap; gap:18px;}
 .kpi-card {
-    flex: 1 1 0;
-    min-width:140px; max-width:270px;
     border-radius:18px; background:#fff;
     box-shadow:0 2px 8px #EEE;
-    padding:14px 14px 10px 18px;
+    padding:16px 16px 12px 20px;
     text-align:left; vertical-align:top;
+    display:flex; flex-direction:column; justify-content:center;
 }
-.kpi-main {font-weight:700; margin-bottom:0; line-height:1.06;}
+.kpi-amount {min-width:230px; max-width:260px; flex:2;}
+.kpi-mid    {min-width:160px; max-width:190px; flex:1.1;}
+.kpi-small  {min-width:90px;  max-width:100px; flex:0.6;}
+.kpi-main {font-size:2.0em; font-weight:700; margin-bottom:0; line-height:1.09;}
 .kpi-label {font-size:1em; color:#444; margin-bottom:2px;}
 .kpi-delta {font-size:1em; margin-top:2px;}
 </style>
 """
+
 st.markdown(kpi_style, unsafe_allow_html=True)
 st.markdown(
     "<div class='kpi-flex'>"
-    f"<div class='kpi-card'><div class='kpi-label'>Total Order Amount</div><div class='kpi-main' style='font-size:{get_font_size(sales_sum)};'>${sales_sum:,.2f}</div><div class='kpi-delta'>{kpi_delta(sales_sum, prev_sales)}</div></div>"
-    f"<div class='kpi-card'><div class='kpi-label'>Total Order Quantity</div><div class='kpi-main' style='font-size:{get_font_size(qty_sum)};'>{int(qty_sum):,}</div><div class='kpi-delta'>{kpi_delta(qty_sum, prev_qty)}</div></div>"
-    f"<div class='kpi-card'><div class='kpi-label'>AOV</div><div class='kpi-main' style='font-size:{get_font_size(aov)};'>${aov:,.2f}</div><div class='kpi-delta'>{kpi_delta(aov, prev_aov)}</div></div>"
-    f"<div class='kpi-card'><div class='kpi-label'>Canceled Order</div><div class='kpi-main' style='font-size:{get_font_size(cancel_qty)};'>{int(cancel_qty):,}</div><div class='kpi-delta'>{kpi_delta(cancel_qty, prev_cancel)}</div></div>"
-    "</div>", unsafe_allow_html=True
+    f"<div class='kpi-card kpi-amount'><div class='kpi-label'>Total Order Amount</div><div class='kpi-main'>${sales_sum:,.2f}</div><div class='kpi-delta'>{kpi_delta(sales_sum, prev_sales)}</div></div>"
+    f"<div class='kpi-card kpi-mid'><div class='kpi-label'>Total Order Quantity</div><div class='kpi-main'>{int(qty_sum):,}</div><div class='kpi-delta'>{kpi_delta(qty_sum, prev_qty)}</div></div>"
+    f"<div class='kpi-card kpi-mid'><div class='kpi-label'>AOV</div><div class='kpi-main'>${aov:,.2f}</div><div class='kpi-delta'>{kpi_delta(aov, prev_aov)}</div></div>"
+    f"<div class='kpi-card kpi-small'><div class='kpi-label'>Canceled Order</div><div class='kpi-main'>{int(cancel_qty):,}</div><div class='kpi-delta'>{kpi_delta(cancel_qty, prev_cancel)}</div></div>"
+    "</div>",
+    unsafe_allow_html=True
 )
 
     

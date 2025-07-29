@@ -1,11 +1,24 @@
 import streamlit as st
 import pandas as pd
 from dateutil import parser
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name):
-    # (구글 시트 연결코드)
-    # ...
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    json_data = {k: str(v) for k, v in st.secrets["gcp_service_account"].items()}
+    with open("/tmp/service_account.json", "w") as f:
+        import json
+        json.dump(json_data, f)
+    creds = ServiceAccountCredentials.from_json_keyfile_name("/tmp/service_account.json", scope)
+    client = gspread.authorize(creds)
+    GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
+    sheet = client.open_by_url(GOOGLE_SHEET_URL).worksheet(sheet_name)
+    data = sheet.get_all_records()
     df = pd.DataFrame(data)
     df.columns = [c.lower().strip() for c in df.columns]
     return df

@@ -4,6 +4,7 @@ from dateutil import parser
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
+# === 구글 시트 데이터 로딩 ===
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name):
     scope = [
@@ -29,42 +30,79 @@ def parse_temudate(dt):
     except:
         return pd.NaT
 
+def parse_sheindate(dt):
+    try:
+        return pd.to_datetime(str(dt), errors="coerce", infer_datetime_format=True)
+    except:
+        return pd.NaT
+
 # === 데이터 로딩 ===
 df_temu = load_google_sheet("TEMU_SALES")
+df_shein = load_google_sheet("SHEIN_SALES")
 df_info = load_google_sheet("PRODUCT_INFO")
+
+# 날짜 파싱
 df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
+df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
+
+# --- 플랫폼 필터 UI
+platform = st.radio("플랫폼 선택", ["TEMU", "SHEIN", "BOTH"], horizontal=True)
 
 # === 날짜필터 (00:00 ~ 23:59) ===
-min_date, max_date = df_temu["order date"].min().date(), df_temu["order date"].max().date()
+if platform == "TEMU":
+    date_col = df_temu["order date"]
+elif platform == "SHEIN":
+    date_col = df_shein["order date"]
+else:
+    date_col = pd.concat([df_temu["order date"], df_shein["order date"]])
+
+min_date, max_date = date_col.min().date(), date_col.max().date()
 date_range = st.date_input("조회 기간", (min_date, max_date))
-# 선택한 날짜의 00:00:00 ~ 23:59:59
 start = pd.to_datetime(date_range[0])
 end = pd.to_datetime(date_range[1]) + pd.Timedelta(hours=23, minutes=59, seconds=59)
-mask = (df_temu["order date"] >= start) & (df_temu["order date"] <= end)
-df_view = df_temu[mask]
 
-# === KPI (Shipped + Delivered) & Canceled 따로 ===
-sold_mask = df_view["order item status"].str.lower().isin(["shipped", "delivered"])
-df_sold = df_view[sold_mask]
-qty_sum = pd.to_numeric(df_sold["quantity shipped"], errors="coerce").fillna(0).sum()
-sales_sum = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0).sum()
-aov = sales_sum / qty_sum if qty_sum > 0 else 0
+# === 데이터 필터링 함수 ===
+def filter_temu(df, start, end):
+    mask = (df["order date"] >= start) & (df["order date"] <= end)
+    df = df[mask]
+    sold_mask = df["order item status"].str.lower().isin(["shipped", "delivered"])
+    cancel_mask = df["order item status"].str.lower() == "canceled"
+    df_sold = df[sold_mask]
+    df_cancel = df[cancel_mask]
+    qty = pd.to_numeric(df_sold["quantity shipped"], errors="coerce").fillna(0).sum()
+    sales = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0).sum()
+    aov = sales / qty if qty > 0 else 0
+    cancel_qty = pd.to_numeric(df_cancel["quantity shipped"], errors="coerce").fillna(0).sum()
+    return df_sold, qty, sales, aov, cancel_qty
 
-cancel_mask = df_view["order item status"].str.lower() == "canceled"
-cancel_qty = pd.to_numeric(df_view[cancel_mask]["quantity shipped"], errors="coerce").fillna(0).sum()
+def filter_shein(df, start, end):
+    mask = (df["order date"] >= start) & (df["order date"] <= end)
+    df = df[mask]
+    # 상태가 refunded인 경우만 cancel로 처리, 나머지는 다 판매
+    is_cancel = df["order status"].str.lower().str.strip() == "customer refunded"
+    df_cancel = df[is_cancel]
+    df_sold = df[~is_cancel]
+    qty = len(df_sold)
+    sales = pd.to_numeric(df_sold["product price"], errors="coerce").fillna(0).sum()
+    aov = sales / qty if qty > 0 else 0
+    cancel_qty = len(df_cancel)
+    return df_sold, qty, sales, aov, cancel_qty
 
-# === KPI 비교 (이전 동일 기간)
-period_days = (end - start).days + 1
-prev_start = start - pd.Timedelta(days=period_days)
-prev_end = end - pd.Timedelta(days=period_days)
-prev_mask = (df_temu["order date"] >= prev_start) & (df_temu["order date"] <= prev_end)
-df_prev = df_temu[prev_mask]
-prev_sold = df_prev[df_prev["order item status"].str.lower().isin(["shipped", "delivered"])]
-prev_qty = pd.to_numeric(prev_sold["quantity shipped"], errors="coerce").fillna(0).sum()
-prev_sales = pd.to_numeric(prev_sold["base price total"], errors="coerce").fillna(0).sum()
-prev_aov = prev_sales / prev_qty if prev_qty > 0 else 0
-prev_cancel = pd.to_numeric(df_prev[df_prev["order item status"].str.lower()=="canceled"]["quantity shipped"], errors="coerce").fillna(0).sum()
+# --- 실제 데이터 분기 및 통합
+if platform == "TEMU":
+    df_sold, qty_sum, sales_sum, aov, cancel_qty = filter_temu(df_temu, start, end)
+elif platform == "SHEIN":
+    df_sold, qty_sum, sales_sum, aov, cancel_qty = filter_shein(df_shein, start, end)
+else:
+    df_sold_temu, qty_temu, sales_temu, aov_temu, cancel_temu = filter_temu(df_temu, start, end)
+    df_sold_shein, qty_shein, sales_shein, aov_shein, cancel_shein = filter_shein(df_shein, start, end)
+    qty_sum = qty_temu + qty_shein
+    sales_sum = sales_temu + sales_shein
+    aov = sales_sum / qty_sum if qty_sum > 0 else 0
+    cancel_qty = cancel_temu + cancel_shein
+    df_sold = pd.concat([df_sold_temu, df_sold_shein], sort=False)
 
+# === KPI 카드 (증감 비교는 TEMU만 일단)
 def kpi_delta(now, prev):
     if prev == 0: return ""
     pct = (now-prev)/prev*100
@@ -72,17 +110,24 @@ def kpi_delta(now, prev):
     arrow = "▼" if pct < 0 else "▲"
     return f"<span style='color:{color}; font-size:0.95em;'>{arrow} {pct:.1f}%</span>"
 
-# === KPI 네모 카드 한 줄 & 증감 아래 표시
-def get_font_size(val):
-    # 6자 이하면 크게, 7~8자 중간, 9자 이상 작게
-    n = len(str(int(val)))
-    if n <= 6:
-        return "2.2em"
-    elif n <= 8:
-        return "1.65em"
-    else:
-        return "1.15em"
+# 이전 기간 계산 (기간동일)
+period_days = (end - start).days + 1
+prev_start = start - pd.Timedelta(days=period_days)
+prev_end = end - pd.Timedelta(days=period_days)
 
+if platform == "TEMU":
+    prev_sold, prev_qty, prev_sales, prev_aov, prev_cancel = filter_temu(df_temu, prev_start, prev_end)
+elif platform == "SHEIN":
+    prev_sold, prev_qty, prev_sales, prev_aov, prev_cancel = filter_shein(df_shein, prev_start, prev_end)
+else:
+    prev_temu, qty_temu, sales_temu, aov_temu, cancel_temu = filter_temu(df_temu, prev_start, prev_end)
+    prev_shein, qty_shein, sales_shein, aov_shein, cancel_shein = filter_shein(df_shein, prev_start, prev_end)
+    prev_qty = qty_temu + qty_shein
+    prev_sales = sales_temu + sales_shein
+    prev_aov = prev_sales / prev_qty if prev_qty > 0 else 0
+    prev_cancel = cancel_temu + cancel_shein
+
+# --- KPI 네모 카드 스타일 (크기 자동)
 kpi_style = """
 <style>
 .kpi-flex {display:flex; flex-wrap:nowrap; gap:18px;}
@@ -101,7 +146,6 @@ kpi_style = """
 .kpi-delta {font-size:1em; margin-top:2px;}
 </style>
 """
-
 st.markdown(kpi_style, unsafe_allow_html=True)
 st.markdown(
     "<div class='kpi-flex'>"
@@ -113,31 +157,75 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-    
-# === 일별 그래프
+# === 일별 그래프 (판매수량, 매출)
 st.subheader("일별 판매 추이")
-daily = df_sold.groupby("order date").agg({
-    "quantity shipped": "sum",
-    "base price total": "sum"
-}).reset_index().sort_values("order date")
-st.line_chart(daily.set_index("order date")[["quantity shipped", "base price total"]])
+if platform == "TEMU":
+    daily = df_sold.groupby("order date").agg({
+        "quantity shipped": "sum",
+        "base price total": "sum"
+    }).reset_index().sort_values("order date")
+    st.line_chart(daily.set_index("order date")[["quantity shipped", "base price total"]])
+elif platform == "SHEIN":
+    daily = df_sold.groupby("order date").agg({
+        "product price": "count"
+    }).rename(columns={"product price": "qty"}).reset_index().sort_values("order date")
+    daily["sales"] = pd.to_numeric(df_sold.groupby("order date")["product price"].sum())
+    st.line_chart(daily.set_index("order date")[["qty", "sales"]])
+else:
+    # BOTH
+    daily_temu = df_sold_temu.groupby("order date").agg({
+        "quantity shipped": "sum",
+        "base price total": "sum"
+    }).rename(columns={"quantity shipped":"qty_temu", "base price total":"sales_temu"})
+    daily_shein = df_sold_shein.groupby("order date").agg({
+        "product price": "count"
+    }).rename(columns={"product price":"qty_shein"})
+    daily_shein["sales_shein"] = pd.to_numeric(df_sold_shein.groupby("order date")["product price"].sum())
+    daily = pd.DataFrame(index=pd.date_range(start, end, freq='D'))
+    if not daily_temu.empty:
+        daily = daily.join(daily_temu, how="left")
+    if not daily_shein.empty:
+        daily = daily.join(daily_shein, how="left")
+    daily = daily.fillna(0)
+    daily["qty"] = daily.get("qty_temu", 0) + daily.get("qty_shein", 0)
+    daily["sales"] = daily.get("sales_temu", 0) + daily.get("sales_shein", 0)
+    st.line_chart(daily[["qty", "sales"]])
 
-# === 베스트셀러 10: (이미지+스타일넘버+판매수량 표로, 숫자X)
-
-best = (
-    df_sold.groupby("product number")["quantity shipped"].sum()
-    .reset_index()
-    .sort_values("quantity shipped", ascending=False)
-    .head(10)
-)
-# 이미지 정보 결합 (df_info에 image컬럼 존재해야함)
-if "df_info" in globals():
+# === 베스트셀러 10
+st.subheader("Best Seller 10")
+if platform == "TEMU":
+    best = (
+        df_sold.groupby("product number")["quantity shipped"].sum()
+        .reset_index()
+        .sort_values("quantity shipped", ascending=False)
+        .head(10)
+    )
+    best = best.merge(df_info[["product number", "image"]], how="left", on="product number")
+    best["qty"] = best["quantity shipped"]
+elif platform == "SHEIN":
+    best = (
+        df_sold.groupby("product description").size()
+        .reset_index(name="qty")
+        .sort_values("qty", ascending=False)
+        .rename(columns={"product description": "product number"})
+        .head(10)
+    )
     best = best.merge(df_info[["product number", "image"]], how="left", on="product number")
 else:
-    best["image"] = ""
+    best_temu = (
+        df_sold_temu.groupby("product number")["quantity shipped"].sum()
+        .reset_index()
+        .rename(columns={"quantity shipped":"qty"})
+    )
+    best_shein = (
+        df_sold_shein.groupby("product description").size()
+        .reset_index(name="qty")
+        .rename(columns={"product description":"product number"})
+    )
+    best = pd.concat([best_temu, best_shein]).groupby("product number")["qty"].sum().reset_index()
+    best = best.sort_values("qty", ascending=False).head(10)
+    best = best.merge(df_info[["product number", "image"]], how="left", on="product number")
 
-# 표 렌더 (이미지+스타일+판매수량) & 전체 폭 조절
-st.subheader("Best Seller 10")
 table_html = """
     <table style='width:100%;text-align:center;border-collapse:separate;border-spacing:0 12px;font-size:1.04rem;'>
         <tr>
@@ -148,6 +236,6 @@ table_html = """
 """
 for _, row in best.iterrows():
     img = f"<img src='{row['image']}' width='60' style='border-radius:10px'>" if isinstance(row['image'], str) and row['image'].startswith("http") else ""
-    table_html += f"<tr style='background:white;border-radius:16px;box-shadow:0 2px 8px #eee;'><td>{img}</td><td>{row['product number']}</td><td style='font-weight:600'>{int(row['quantity shipped'])}</td></tr>"
+    table_html += f"<tr style='background:white;border-radius:16px;box-shadow:0 2px 8px #eee;'><td>{img}</td><td>{row['product number']}</td><td style='font-weight:600'>{int(row['qty'])}</td></tr>"
 table_html += "</table>"
 st.markdown(table_html, unsafe_allow_html=True)

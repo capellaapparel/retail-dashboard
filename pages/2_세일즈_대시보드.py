@@ -74,21 +74,34 @@ def kpi_delta(now, prev):
 
 # === KPI 네모 카드 한 줄 & 증감 아래 표시
 def get_font_size(val):
-    # 7자 이상이면 폰트 줄임 (적당히 조절 가능)
-    return "2.1em" if len(str(int(val))) <= 6 else "1.45em"
+    # 6자 이하면 크게, 7~8자 중간, 9자 이상 작게
+    n = len(str(int(val)))
+    if n <= 6:
+        return "2.2em"
+    elif n <= 8:
+        return "1.65em"
+    else:
+        return "1.15em"
 
 kpi_style = """
 <style>
-.kpi-card {display:inline-block; margin:0 10px 0 0; border-radius:18px; background:#fff; box-shadow:0 2px 8px #EEE; padding:20px 25px; min-width:170px; text-align:left; vertical-align:top;}
-.kpi-main {font-weight:700; margin-bottom:0;}
+.kpi-flex {display:flex; flex-wrap:nowrap; gap:15px;}
+.kpi-card {
+    flex: 1 1 0;
+    min-width:140px; max-width:220px;
+    border-radius:18px; background:#fff;
+    box-shadow:0 2px 8px #EEE;
+    padding:14px 14px 10px 18px;
+    text-align:left; vertical-align:top;
+}
+.kpi-main {font-weight:700; margin-bottom:0; line-height:1.06;}
 .kpi-label {font-size:1em; color:#444; margin-bottom:2px;}
 .kpi-delta {font-size:1em; margin-top:2px;}
 </style>
 """
 st.markdown(kpi_style, unsafe_allow_html=True)
-
 st.markdown(
-    "<div style='display:flex;'>"
+    "<div class='kpi-flex'>"
     f"<div class='kpi-card'><div class='kpi-label'>Total Order Amount</div><div class='kpi-main' style='font-size:{get_font_size(sales_sum)};'>${sales_sum:,.2f}</div><div class='kpi-delta'>{kpi_delta(sales_sum, prev_sales)}</div></div>"
     f"<div class='kpi-card'><div class='kpi-label'>Total Order Quantity</div><div class='kpi-main' style='font-size:{get_font_size(qty_sum)};'>{int(qty_sum):,}</div><div class='kpi-delta'>{kpi_delta(qty_sum, prev_qty)}</div></div>"
     f"<div class='kpi-card'><div class='kpi-label'>AOV</div><div class='kpi-main' style='font-size:{get_font_size(aov)};'>${aov:,.2f}</div><div class='kpi-delta'>{kpi_delta(aov, prev_aov)}</div></div>"

@@ -131,14 +131,18 @@ else:  # BOTH
 # --- KPI 카드 스타일 ---
 kpi_style = """
 <style>
-.kpi-row {display:flex; gap:16px;}
 .kpi-card {
-  border-radius:18px; background:#fff; box-shadow:0 2px 8px #EEE;
-  padding:16px 18px; min-width:170px; text-align:left; flex:1 1 0;
-  max-width:270px; margin:0 5px 8px 0;
-  display:flex; flex-direction:column; align-items:flex-start; justify-content:center;
+    display:inline-block;
+    margin:0 10px 0 0;
+    border-radius:18px;
+    background:#fff;
+    box-shadow:0 2px 8px #EEE;
+    padding:20px 25px;
+    min-width:220px;      /* 기존 170px → 220px으로 증가 */
+    text-align:left;
+    vertical-align:top;
 }
-.kpi-main {font-size:1.5em; font-weight:700; margin-bottom:0; word-break:break-all;}
+.kpi-main {font-size:2.1em; font-weight:700; margin-bottom:0;}
 .kpi-label {font-size:1em; color:#444; margin-bottom:2px;}
 .kpi-delta {font-size:1em; margin-top:2px;}
 </style>

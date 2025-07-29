@@ -88,10 +88,10 @@ kpi_style = """
 .kpi-flex {display:flex; flex-wrap:nowrap; gap:15px;}
 .kpi-card {
     flex: 1 1 0;
-    min-width:140px; max-width:220px;
+    min-width:140px; max-width:270px;
     border-radius:18px; background:#fff;
     box-shadow:0 2px 8px #EEE;
-    padding:14px 14px 10px 18px;
+    padding:10px 10px 10px 18px;
     text-align:left; vertical-align:top;
 }
 .kpi-main {font-weight:700; margin-bottom:0; line-height:1.06;}

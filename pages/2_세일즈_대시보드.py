@@ -87,7 +87,7 @@ def shein_agg(df, start, end):
 st.markdown("""
     <style>
     .center-container {
-        max-width: 1200px;
+        max-width: 1000px;
         margin-left: auto !important;
         margin-right: auto !important;
         padding-left: 30px;

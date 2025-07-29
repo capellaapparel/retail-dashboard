@@ -88,7 +88,27 @@ st.markdown("<div style='display:flex;'>"
             f"<div class='kpi-card'><div class='kpi-label'>AOV</div><div class='kpi-main'>${aov:,.2f}</div><div class='kpi-delta'>{kpi_delta(aov, prev_aov)}</div></div>"
             f"<div class='kpi-card'><div class='kpi-label'>Canceled Order</div><div class='kpi-main'>{int(cancel_qty):,}</div><div class='kpi-delta'>{kpi_delta(cancel_qty, prev_cancel)}</div></div>"
             "</div>", unsafe_allow_html=True)
+col1, col2, col3, col4 = st.columns(4)
 
+def kpi_box(label, value, small_font=False):
+    font_size = "2.5rem" if not small_font else "1.6rem"
+    st.markdown(
+        f"""
+        <div style='background:white;border-radius:16px;box-shadow:0 2px 8px #eee;padding:20px 10px 10px 20px;min-height:110px;'>
+            <div style='color:#444;font-size:1.04rem;'>{label}</div>
+            <div style='font-weight:600;font-size:{font_size};margin-top:4px;'>{value}</div>
+        </div>
+        """, unsafe_allow_html=True
+    )
+
+max_length = max(len(f"{sales_sum:,.2f}"), len(f"{int(qty_sum):,}"), len(f"{aov:,.2f}"))
+small_font = max_length > 9  # 1천만 단위 넘어가면 폰트 축소
+
+with col1: kpi_box("Total Order Amount", f"${sales_sum:,.2f}", small_font)
+with col2: kpi_box("Total Order Quantity", f"{int(qty_sum):,}", small_font)
+with col3: kpi_box("AOV", f"${aov:,.2f}", small_font)
+with col4: kpi_box("Canceled Order", f"{int(cancel_qty):,}", small_font)
+    
 # === 일별 그래프
 st.subheader("일별 판매 추이")
 daily = df_sold.groupby("order date").agg({

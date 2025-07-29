@@ -4,9 +4,10 @@ from dateutil import parser
 
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name):
-    # ... 기존 코드대로 구글시트에서 데이터 가져오기 ...
-    # df.columns = [c.lower().strip() for c in df.columns]
-    pass  # 실제 코드에 맞게 채워넣으세요
+    # ... (구글 시트 불러오는 코드) ...
+    df = pd.DataFrame(data)
+    df.columns = [c.lower().strip() for c in df.columns]
+    return df  # <- 이게 빠지면 None이 반환됨!
 
 def parse_temudate(dt):
     try:

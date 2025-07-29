@@ -35,6 +35,8 @@ def parse_sheindate(dt):
         return pd.NaT
 
 def load_sales_data(secrets=None):
+    df.columns = [c.lower().strip() for c in df.columns]
+
     # secrets 파라미터는 streamlit_app.py처럼 넘겨줘야함
     PRODUCT_SHEET = "PRODUCT_INFO"
     SHEIN_SHEET = "SHEIN_SALES"

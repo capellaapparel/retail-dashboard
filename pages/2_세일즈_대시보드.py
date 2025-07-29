@@ -1,65 +1,72 @@
-if page == "📊 세일즈 대시보드":
-    try:
-        df_shein = load_google_sheet(SHEIN_SHEET)
-        df_temu = load_google_sheet(TEMU_SHEET)
-    except Exception as e:
-        st.error("❌ 데이터 로드 실패: " + str(e))
-        st.stop()
+import streamlit as st
+import pandas as pd
+from datetime import timedelta
 
-    df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
-    df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
+def get_periods(date_range):
+    start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+    delta = end - start
+    prev_start, prev_end = start - (delta + timedelta(days=1)), start - timedelta(days=1)
+    last_year_start, last_year_end = start - pd.DateOffset(years=1), end - pd.DateOffset(years=1)
+    return (start, end), (prev_start, prev_end), (last_year_start, last_year_end)
 
-    shein_sales = df_shein.rename(columns={
-        "product description": "product number",
-        "qty": "qty",
-        "product price": "unit price"
-    }).copy()
-    shein_sales["platform"] = "SHEIN"
-    shein_sales["qty"] = pd.to_numeric(shein_sales["qty"], errors="coerce").fillna(0)
-    shein_sales["sales"] = shein_sales["qty"] * pd.to_numeric(shein_sales["unit price"], errors="coerce").fillna(0)
+def filter_sales(df, start, end, platform):
+    df = df.copy()
+    if platform != "BOTH":
+        df = df[df["platform"] == platform]
+    return df[(df["order date"] >= start) & (df["order date"] <= end)]
 
-    temu_sales = df_temu.rename(columns={
-        "product number": "product number",
-        "qty": "qty",
-        "base price total": "unit price"
-    }).copy()
-    temu_sales["platform"] = "TEMU"
-    temu_sales["qty"] = pd.to_numeric(temu_sales["qty"], errors="coerce").fillna(0)
-    temu_sales["sales"] = temu_sales["qty"] * pd.to_numeric(temu_sales["unit price"], errors="coerce").fillna(0)
+def sales_dashboard(df_all):
+    st.title("세일즈 대시보드")
 
-    df_all = pd.concat([shein_sales, temu_sales], ignore_index=True)
-    df_all = df_all[df_all["order date"].notna()]
+    # --- 필터
+    platform = st.radio("플랫폼 선택", ["TEMU", "SHEIN", "BOTH"], horizontal=True)
+    min_date, max_date = df_all["order date"].min(), df_all["order date"].max()
+    date_range = st.date_input("날짜 필터", (min_date, max_date))
 
-    st.sidebar.subheader("플랫폼")
-    platform_filter = st.sidebar.radio("플랫폼", ["BOTH", "SHEIN", "TEMU"], horizontal=True)
-    st.sidebar.subheader("조회 기간")
-    min_date = df_all["order date"].min()
-    max_date = df_all["order date"].max()
-    date_range = st.sidebar.date_input("기간", (min_date, max_date))
+    # --- 기간 분리
+    (sel_start, sel_end), (prev_start, prev_end), (ly_start, ly_end) = get_periods(date_range)
 
-    df_view = df_all.copy()
-    if platform_filter != "BOTH":
-        df_view = df_view[df_view["platform"] == platform_filter]
-    df_view = df_view[(df_view["order date"] >= pd.to_datetime(date_range[0])) & (df_view["order date"] <= pd.to_datetime(date_range[1]))]
+    # --- 데이터 분리
+    sel_df  = filter_sales(df_all, sel_start, sel_end, platform)
+    prev_df = filter_sales(df_all, prev_start, prev_end, platform)
+    ly_df   = filter_sales(df_all, ly_start, ly_end, platform)
 
-    total_qty = int(df_view["qty"].sum())
-    total_sales = df_view["sales"].sum()
-    order_count = df_view.shape[0]
+    # --- KPI 계산
+    def kpi(df):
+        return {
+            "amount": df["sales"].sum(),
+            "qty": int(df["qty"].sum()),
+            "aov": df["sales"].sum() / max(1, df["order id"].nunique()),
+            "cancel": int((df["order status"].str.lower() == "cancelled").sum())
+        }
+    kpi_sel, kpi_prev = kpi(sel_df), kpi(prev_df)
 
-    colA, colB, colC = st.columns(3)
-    colA.metric("총 판매수량", f"{total_qty:,}")
-    colB.metric("총 매출", f"${total_sales:,.2f}")
-    colC.metric("주문건수", f"{order_count:,}")
+    # --- KPI 레이아웃 (증감 % 표시)
+    col1, col2, col3, col4 = st.columns(4)
+    def pct(val, prev):
+        if prev == 0: return "N/A"
+        v = (val-prev)/prev*100
+        emoji = "⬆️" if v > 0 else "⬇️" if v < 0 else ""
+        color = "red" if v < 0 else "green"
+        return f"<span style='color:{color}'>{emoji} {v:.1f}%</span>"
 
-    st.subheader("일별 판매 추이")
-    daily = df_view.groupby("order date").agg({"qty": "sum", "sales": "sum"}).reset_index()
-    st.line_chart(daily.set_index("order date")[["qty", "sales"]])
+    col1.metric("Total Order Amount", f"${kpi_sel['amount']:,.2f}", pct(kpi_sel["amount"], kpi_prev["amount"]))
+    col2.metric("Total Order Quantity", f"{kpi_sel['qty']:,}", pct(kpi_sel["qty"], kpi_prev["qty"]))
+    col3.metric("AOV", f"${kpi_sel['aov']:,.2f}", pct(kpi_sel["aov"], kpi_prev["aov"]))
+    col4.metric("Canceled Order", f"{kpi_sel['cancel']:,}", pct(kpi_sel["cancel"], kpi_prev["cancel"]))
 
-    st.subheader("베스트셀러 TOP10")
-    best = df_view.groupby("product number").agg({"qty": "sum", "sales": "sum"}).reset_index()
-    best = best.sort_values("qty", ascending=False).head(10)
+    # --- 일별 매출 그래프 (기간 3개)
+    st.subheader("세일즈 그래프")
+    def day_df(df, label):
+        return df.groupby("order date").agg({"sales":"sum"}).rename(columns={"sales": label})
+    chart_df = pd.concat([
+        day_df(sel_df, "Selected period"),
+        day_df(prev_df, "Previous period"),
+        day_df(ly_df, "Same period last year")
+    ], axis=1).fillna(0)
+    st.line_chart(chart_df)
+
+    # --- 베스트셀러
+    st.subheader("Best Seller 10")
+    best = sel_df.groupby("product number").agg({"qty":"sum", "sales":"sum"}).reset_index().sort_values("qty", ascending=False).head(10)
     st.dataframe(best)
-
-    st.subheader("플랫폼별 매출 비율")
-    platform_stats = df_view.groupby("platform")["sales"].sum()
-    st.bar_chart(platform_stats)

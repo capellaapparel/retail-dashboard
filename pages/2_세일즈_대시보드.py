@@ -26,18 +26,7 @@ def load_google_sheet(sheet_name):
     df.columns = [c.lower().strip() for c in df.columns]
     return df
     
-st.markdown("""
-    <style>
-    .center-container {
-        max-width: 1200px;
-        margin-left: auto !important;
-        margin-right: auto !important;
-        padding-left: 30px;
-        padding-right: 30px;
-    }
-    </style>
-    <div class='center-container'>
-""", unsafe_allow_html=True)
+
 
 def parse_temudate(dt):
     try:
@@ -94,6 +83,20 @@ def shein_agg(df, start, end):
     return sales_sum, qty_sum, aov, cancel_qty, df_sold
 
 # --- 대시보드 UI ---
+
+st.markdown("""
+    <style>
+    .center-container {
+        max-width: 1200px;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        padding-left: 30px;
+        padding-right: 30px;
+    }
+    </style>
+    <div class='center-container'>
+""", unsafe_allow_html=True)
+
 st.title("세일즈 대시보드")
 
 # 필터

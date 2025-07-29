@@ -55,12 +55,27 @@ cancel_mask = df_view["order item status"].str.lower() == "canceled"
 df_cancel = df_view[cancel_mask]
 cancel_qty = pd.to_numeric(df_cancel["quantity shipped"], errors="coerce").fillna(0).sum()
 
-# === KPI 레이아웃 ===
+# ---- KPI 카드 (네모 상자)
+def metric_card(label, value):
+    st.markdown(
+        f"""
+        <div style="background: #fff; border-radius: 14px; border: 1.5px solid #e5e7eb; box-shadow: 0 1px 4px #0001; padding: 18px 10px 8px 18px; margin-bottom: 0.5rem; min-width: 140px;">
+            <div style="font-size:14px; color: #555;">{label}</div>
+            <div style="font-size: 2rem; font-weight: 600; margin-top: 2px; color: #232323;">{value}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Total Order Amount", f"${sales_sum:,.2f}")
-col2.metric("Total Order Quantity", f"{int(qty_sum):,}")
-col3.metric("AOV", f"${aov:,.2f}")
-col4.metric("Canceled Order", f"{int(cancel_qty):,}")
+with col1:
+    metric_card("Total Order Amount", f"${sales_sum:,.2f}")
+with col2:
+    metric_card("Total Order Quantity", f"{int(qty_sum):,}")
+with col3:
+    metric_card("AOV", f"${aov:,.2f}")
+with col4:
+    metric_card("Canceled Order", f"{int(cancel_qty):,}")
 
 # === 일별 판매 추이 ===
 st.subheader("일별 판매 추이")
@@ -71,12 +86,40 @@ daily = df_sold.groupby("order date").agg({
 daily = daily.sort_values("order date")
 st.line_chart(daily.set_index("order date")[["quantity shipped", "base price total"]])
 
-# === 베스트셀러 10 ===
+# ---- 베스트셀러 테이블 (이미지 + 판매수량)
 st.subheader("Best Seller 10")
+
+# df_info = load_google_sheet("PRODUCT_INFO")  # <-- 스타일 넘버/이미지URL 매칭용, 필요시 불러오기
+# df_info는 product number(소문자)/image(소문자) 컬럼 필요
+
+# 베스트셀러 데이터
 best = (
     df_sold.groupby("product number")["quantity shipped"].sum()
     .reset_index()
     .sort_values("quantity shipped", ascending=False)
     .head(10)
 )
-st.dataframe(best)
+
+# 이미지URL 붙이기 (df_info에 image 컬럼이 있어야함)
+try:
+    df_info = load_google_sheet("PRODUCT_INFO")
+    df_info.columns = [c.lower().strip() for c in df_info.columns]
+    best = pd.merge(best, df_info[["product number", "image"]], on="product number", how="left")
+except Exception as e:
+    best["image"] = ""
+
+# Streamlit 표 (이미지+판매수량만)
+def image_table(df):
+    html = """
+    <table style='width:100%; border-collapse:collapse;'>
+      <tr>
+        <th>Image</th><th>Product Number</th><th>Sold Qty</th>
+      </tr>
+    """
+    for _, row in df.iterrows():
+        img = f"<img src='{row['image']}' width='60'>" if row['image'] else ""
+        html += f"<tr style='height:68px; border-bottom:1px solid #eee;'><td>{img}</td><td>{row['product number']}</td><td style='font-size:1.2rem; font-weight:600'>{int(row['quantity shipped'])}</td></tr>"
+    html += "</table>"
+    return html
+
+st.markdown(image_table(best), unsafe_allow_html=True)

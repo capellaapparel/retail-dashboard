@@ -151,7 +151,15 @@ kpi_style = """
 st.markdown(kpi_style, unsafe_allow_html=True)
 st.markdown(
     "<div class='kpi-row'>"
-    f"<div class='kpi-card'><div class='kpi-label'>Total Order Amount</div><div class='kpi-main' style='font-size:1.5em'>{sales_sum:,.0f if sales_sum > 1e6 else 2f}</div><div class='kpi-delta'>{kpi_delta(sales_sum, prev_sales)}</div></div>"
+    f"<div class='kpi-card'><div class='kpi-label'>Total Order Amount</div><div class='kpi-main' style='font-size:1.5em'>
+    if sales_sum > 1e6:
+    sales_sum_str = f"${sales_sum:,.0f}"
+else:
+    sales_sum_str = f"${sales_sum:,.2f}"
+    # KPI 카드 HTML
+st.markdown(
+    "<div class='kpi-row'>"
+    f"<div class='kpi-card'><div class='kpi-label'>Total Order Amount</div><div class='kpi-main' style='font-size:1.5em'>{sales_sum_str}</div><div class='kpi-delta'>{kpi_delta(sales_sum, prev_sales)}</div></div>"
     f"<div class='kpi-card'><div class='kpi-label'>Total Order Quantity</div><div class='kpi-main'>{int(qty_sum):,}</div><div class='kpi-delta'>{kpi_delta(qty_sum, prev_qty)}</div></div>"
     f"<div class='kpi-card'><div class='kpi-label'>AOV</div><div class='kpi-main'>${aov:,.2f}</div><div class='kpi-delta'>{kpi_delta(aov, prev_aov)}</div></div>"
     f"<div class='kpi-card' style='min-width:100px; max-width:120px;'><div class='kpi-label'>Canceled Order</div><div class='kpi-main'>{int(cancel_qty):,}</div><div class='kpi-delta'>{kpi_delta(cancel_qty, prev_cancel)}</div></div>"

@@ -100,22 +100,30 @@ st.line_chart(daily.set_index("order date")[["quantity shipped", "base price tot
 
 # === 베스트셀러 10: (이미지+스타일넘버+판매수량 표로, 숫자X)
 st.subheader("Best Seller 10")
-best10 = (
-    df_sold.groupby("product number")["quantity shipped"].sum().reset_index()
-    .sort_values("quantity shipped", ascending=False).head(10)
+best = (
+    df_sold.groupby("product number")["quantity shipped"].sum()
+    .reset_index()
+    .sort_values("quantity shipped", ascending=False)
+    .head(10)
 )
-# 이미지 링크 merge
-df_info['product number'] = df_info['product number'].astype(str).str.strip().str.upper()
-best10['product number'] = best10['product number'].astype(str).str.strip().str.upper()
-best10 = best10.merge(df_info[['product number','image']], on='product number', how='left')
+# 이미지 정보 결합 (df_info에 image컬럼 존재해야함)
+if "df_info" in globals():
+    best = best.merge(df_info[["product number", "image"]], how="left", on="product number")
+else:
+    best["image"] = ""
 
-def render_img_table(df):
-    # HTML 표 생성 (이미지+스타일넘버+판매갯수)
-    html = "<table style='width:80%;text-align:center;'><tr><th></th><th>Style</th><th>Sold</th></tr>"
-    for _, row in df.iterrows():
-        img_tag = f"<img src='{row['image']}' width='60'>" if pd.notna(row['image']) and str(row['image']).startswith("http") else ""
-        html += f"<tr><td>{img_tag}</td><td>{row['product number']}</td><td>{int(row['quantity shipped'])}</td></tr>"
-    html += "</table>"
-    return html
-
-st.markdown(render_img_table(best10), unsafe_allow_html=True)
+# 표 렌더 (이미지+스타일+판매수량) & 전체 폭 조절
+st.subheader("Best Seller 10")
+table_html = """
+    <table style='width:100%;text-align:center;border-collapse:separate;border-spacing:0 12px;font-size:1.04rem;'>
+        <tr>
+            <th style='width:80px'> </th>
+            <th style='width:40%'>Style</th>
+            <th style='width:30%'>Sold</th>
+        </tr>
+"""
+for _, row in best.iterrows():
+    img = f"<img src='{row['image']}' width='60' style='border-radius:10px'>" if isinstance(row['image'], str) and row['image'].startswith("http") else ""
+    table_html += f"<tr style='background:white;border-radius:16px;box-shadow:0 2px 8px #eee;'><td>{img}</td><td>{row['product number']}</td><td style='font-weight:600'>{int(row['quantity shipped'])}</td></tr>"
+table_html += "</table>"
+st.markdown(table_html, unsafe_allow_html=True)

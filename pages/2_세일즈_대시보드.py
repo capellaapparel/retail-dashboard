@@ -1,13 +1,27 @@
 import streamlit as st
 import pandas as pd
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 from dateutil import parser
 
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name):
-    # ... (구글 시트 불러오는 코드) ...
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    json_data = {k: str(v) for k, v in st.secrets["gcp_service_account"].items()}
+    with open("/tmp/service_account.json", "w") as f:
+        import json
+        json.dump(json_data, f)
+    creds = ServiceAccountCredentials.from_json_keyfile_name("/tmp/service_account.json", scope)
+    client = gspread.authorize(creds)
+    GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
+    sheet = client.open_by_url(GOOGLE_SHEET_URL).worksheet(sheet_name)
+    data = sheet.get_all_records()
     df = pd.DataFrame(data)
     df.columns = [c.lower().strip() for c in df.columns]
-    return df  # <- 이게 빠지면 None이 반환됨!
+    return df
 
 def parse_temudate(dt):
     try:
@@ -17,7 +31,6 @@ def parse_temudate(dt):
 
 # 데이터 로딩
 df_temu = load_google_sheet("TEMU_SALES")
-df_temu.columns = [c.lower().strip() for c in df_temu.columns]
 
 # 날짜 파싱
 df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
@@ -68,4 +81,3 @@ best = (
     .head(10)
 )
 st.dataframe(best)
-

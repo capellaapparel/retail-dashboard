@@ -75,8 +75,7 @@ def sales_dashboard(df_all):
 
     pass
 if __name__ == "__main__" or "st" in globals():
-    # 실제 데이터 로드 필요 (utils.py에서 df_all 가져오는 식으로!)
-    df_all = load_sales_data()  # 직접 만들거나 임포트
+    import streamlit as st
+    df_all = load_sales_data(st.secrets)   # <- secrets 넘겨줘야함
     sales_dashboard(df_all)
-
 

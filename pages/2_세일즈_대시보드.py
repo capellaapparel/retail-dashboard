@@ -59,23 +59,54 @@ cancel_qty = pd.to_numeric(df_cancel["quantity shipped"], errors="coerce").filln
 def metric_card(label, value):
     st.markdown(
         f"""
-        <div style="background: #fff; border-radius: 14px; border: 1.5px solid #e5e7eb; box-shadow: 0 1px 4px #0001; padding: 18px 10px 8px 18px; margin-bottom: 0.5rem; min-width: 140px;">
-            <div style="font-size:14px; color: #555;">{label}</div>
-            <div style="font-size: 2rem; font-weight: 600; margin-top: 2px; color: #232323;">{value}</div>
+        <div style="background: #fff; border-radius: 14px; border: 1.5px solid #e5e7eb; box-shadow: 0 1px 4px #0001;
+            padding: 18px 10px 18px 18px; margin-bottom: 0.5rem; min-width: 150px; min-height: 80px; display: flex; flex-direction: column; justify-content: center;">
+            <div style="font-size:15px; color: #444; font-weight: 400;">{label}</div>
+            <div style="font-size: 2rem; font-weight: 600; margin-top: 6px; color: #232323; line-height: 2.2rem; word-break:break-all;">{value}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+def get_prev_period(date_range):
+    start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+    delta = end - start
+    prev_start, prev_end = start - (delta + timedelta(days=1)), start - timedelta(days=1)
+    return prev_start, prev_end
+
+# 사용 예시:
+date_range = st.date_input("기간", (min_date, max_date))
+start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+prev_start, prev_end = get_prev_period(date_range)
+
+sel_df  = df_view[(df_view["order date"] >= start) & (df_view["order date"] <= end)]
+prev_df = df_view[(df_view["order date"] >= prev_start) & (df_view["order date"] <= prev_end)]
+
+# KPI 계산 함수 그대로 사용
+def kpi(df):
+    return {
+        "amount": df["sales"].sum(),
+        "qty": int(df["quantity shipped"].sum()),
+        "aov": df["sales"].sum() / max(1, df["quantity shipped"].sum()),
+        "cancel": int((df["order item status"].str.lower() == "canceled").sum())
+    }
+kpi_sel, kpi_prev = kpi(sel_df), kpi(prev_df)
+
+def pct(val, prev):
+    if prev == 0: return "N/A"
+    v = (val-prev)/prev*100
+    emoji = "⬆️" if v > 0 else "⬇️" if v < 0 else ""
+    color = "red" if v < 0 else "green"
+    return f"<span style='color:{color}'>{emoji} {v:.1f}%</span>"
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    metric_card("Total Order Amount", f"${sales_sum:,.2f}")
+    metric_card("Total Order Amount", f"${kpi_sel['amount']:,.2f} <span style='font-size:1rem'>({pct(kpi_sel['amount'], kpi_prev['amount'])})</span>")
 with col2:
-    metric_card("Total Order Quantity", f"{int(qty_sum):,}")
+    metric_card("Total Order Quantity", f"{kpi_sel['qty']:,} <span style='font-size:1rem'>({pct(kpi_sel['qty'], kpi_prev['qty'])})</span>")
 with col3:
-    metric_card("AOV", f"${aov:,.2f}")
+    metric_card("AOV", f"${kpi_sel['aov']:,.2f} <span style='font-size:1rem'>({pct(kpi_sel['aov'], kpi_prev['aov'])})</span>")
 with col4:
-    metric_card("Canceled Order", f"{int(cancel_qty):,}")
+    metric_card("Canceled Order", f"{kpi_sel['cancel']:,} <span style='font-size:1rem'>({pct(kpi_sel['cancel'], kpi_prev['cancel'])})</span>")
 
 # === 일별 판매 추이 ===
 st.subheader("일별 판매 추이")

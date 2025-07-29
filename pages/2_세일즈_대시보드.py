@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
-from datetime import timedelta
+from utils import load_sales_data  # ← 예시. 실제 데이터 로딩 방식에 맞춰서 import
+
+def sales_dashboard(df_all):
 
 def get_periods(date_range):
     start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
@@ -70,3 +72,11 @@ def sales_dashboard(df_all):
     st.subheader("Best Seller 10")
     best = sel_df.groupby("product number").agg({"qty":"sum", "sales":"sum"}).reset_index().sort_values("qty", ascending=False).head(10)
     st.dataframe(best)
+
+    pass
+if __name__ == "__main__" or "st" in globals():
+    # 실제 데이터 로드 필요 (utils.py에서 df_all 가져오는 식으로!)
+    df_all = load_sales_data()  # 직접 만들거나 임포트
+    sales_dashboard(df_all)
+
+

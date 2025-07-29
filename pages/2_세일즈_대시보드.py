@@ -71,7 +71,3 @@ def sales_dashboard(df_all):
     st.subheader("Best Seller 10")
     best = sel_df.groupby("product number").agg({"qty":"sum", "sales":"sum"}).reset_index().sort_values("qty", ascending=False).head(10)
     st.dataframe(best)
-
-if __name__ == "__main__" or "st" in globals():
-    df_all = load_sales_data(st.secrets)   # utils.py에서 데이터 가져오는 함수
-    sales_dashboard(df_all)

@@ -84,19 +84,6 @@ def shein_agg(df, start, end):
 
 # --- 대시보드 UI ---
 
-st.markdown("""
-    <style>
-    .center-container {
-        max-width: 1000px;
-        margin-left: auto !important;
-        margin-right: auto !important;
-        padding-left: 30px;
-        padding-right: 30px;
-    }
-    </style>
-    <div class='center-container'>
-""", unsafe_allow_html=True)
-
 st.title("세일즈 대시보드")
 
 # 필터
@@ -220,5 +207,5 @@ if not best.empty:
 else:
     st.info("데이터가 없습니다.")
 
-st.markdown("</div>", unsafe_allow_html=True)
+
 

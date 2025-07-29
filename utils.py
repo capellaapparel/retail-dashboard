@@ -3,10 +3,17 @@ import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dateutil import parser
+from datetime import timedelta
 
 
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
 
+def expand_date_range(date_range):
+    """종료일 포함: (start date, end date) -> (start 00:00, end 23:59:59)"""
+    start = pd.to_datetime(date_range[0])
+    end = pd.to_datetime(date_range[1]) + timedelta(days=1) - timedelta(seconds=1)
+    return start, end
+    
 def load_google_sheet(sheet_name, st_secrets):
     scope = [
         "https://spreadsheets.google.com/feeds",

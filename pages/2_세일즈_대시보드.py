@@ -3,6 +3,12 @@ import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dateutil import parser
+from utils import expand_date_range
+
+# ... (st.date_input 등) ...
+start, end = expand_date_range(date_range)
+mask = (df_temu["order date"] >= start) & (df_temu["order date"] <= end)
+df_view = df_temu[mask]
 
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name):

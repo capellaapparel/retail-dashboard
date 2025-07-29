@@ -32,8 +32,8 @@ st.markdown("""
         max-width: 1200px;
         margin-left: auto !important;
         margin-right: auto !important;
-        padding-left: 20px;
-        padding-right: 20px;
+        padding-left: 30px;
+        padding-right: 30px;
     }
     </style>
     <div class='center-container'>

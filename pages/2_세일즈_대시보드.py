@@ -75,7 +75,7 @@ def kpi_delta(now, prev):
 # === KPI 네모 카드 한 줄 & 증감 아래 표시
 def get_font_size(val):
     # 7자 이상이면 폰트 줄임 (적당히 조절 가능)
-    return "2.1em" if len(str(int(val))) <= 7 else "1.45em"
+    return "2.1em" if len(str(int(val))) <= 6 else "1.45em"
 
 kpi_style = """
 <style>
@@ -106,7 +106,7 @@ daily = df_sold.groupby("order date").agg({
 st.line_chart(daily.set_index("order date")[["quantity shipped", "base price total"]])
 
 # === 베스트셀러 10: (이미지+스타일넘버+판매수량 표로, 숫자X)
-st.subheader("Best Seller 10")
+
 best = (
     df_sold.groupby("product number")["quantity shipped"].sum()
     .reset_index()

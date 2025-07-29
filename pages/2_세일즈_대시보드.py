@@ -1,3 +1,16 @@
+st.markdown("""
+    <style>
+    .center-container {
+        max-width: 1200px;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        padding-left: 20px;
+        padding-right: 20px;
+    }
+    </style>
+    <div class='center-container'>
+""", unsafe_allow_html=True)
+
 import streamlit as st
 import pandas as pd
 from dateutil import parser, relativedelta
@@ -201,3 +214,6 @@ if not best.empty:
     )
 else:
     st.info("데이터가 없습니다.")
+
+st.markdown("</div>", unsafe_allow_html=True)
+

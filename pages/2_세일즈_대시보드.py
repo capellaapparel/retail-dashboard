@@ -1,28 +1,24 @@
 import streamlit as st
 import pandas as pd
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from dateutil import parser
-from utils import expand_date_range
-
-# ... (st.date_input 등) ...
-start, end = expand_date_range(date_range)
-mask = (df_temu["order date"] >= start) & (df_temu["order date"] <= end)
-df_view = df_temu[mask]
+from dateutil import parser, tz
+from datetime import timedelta
+from utils import expand_date_range   # 날짜 범위 함수 utils.py에 구현 필요
 
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name):
+    # (구글시트 불러오는 코드. 실제 서비스에서는 secrets 활용)
+    import gspread
+    from oauth2client.service_account import ServiceAccountCredentials
+    GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
     scope = [
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive"
     ]
     json_data = {k: str(v) for k, v in st.secrets["gcp_service_account"].items()}
     with open("/tmp/service_account.json", "w") as f:
-        import json
-        json.dump(json_data, f)
+        import json; json.dump(json_data, f)
     creds = ServiceAccountCredentials.from_json_keyfile_name("/tmp/service_account.json", scope)
     client = gspread.authorize(creds)
-    GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
     sheet = client.open_by_url(GOOGLE_SHEET_URL).worksheet(sheet_name)
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
@@ -32,44 +28,41 @@ def load_google_sheet(sheet_name):
 def parse_temudate(dt):
     try:
         return parser.parse(str(dt).split('(')[0].strip(), fuzzy=True)
-    except:
+    except Exception:
         return pd.NaT
 
-# 데이터 로딩
+# === 데이터 로딩 ===
 df_temu = load_google_sheet("TEMU_SALES")
-
-# 날짜 파싱
 df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
 
-# 필터 UI
+# === 날짜필터 UI ===
 min_date, max_date = df_temu["order date"].min(), df_temu["order date"].max()
 date_range = st.date_input("조회 기간", (min_date, max_date))
+start, end = expand_date_range(date_range)   # end = 23:59:59
 
-# 날짜 필터
-start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+# === 기간 필터링 ===
 mask = (df_temu["order date"] >= start) & (df_temu["order date"] <= end)
 df_view = df_temu[mask]
 
-# 1. 판매(매출) 데이터 (Shipped + Delivered)
+# === 판매/취소 분리 ===
 sold_mask = df_view["order item status"].str.lower().isin(["shipped", "delivered"])
 df_sold = df_view[sold_mask]
 qty_sum = pd.to_numeric(df_sold["quantity shipped"], errors="coerce").fillna(0).sum()
 sales_sum = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0).sum()
 aov = sales_sum / qty_sum if qty_sum > 0 else 0
 
-# 2. 취소 데이터 (Canceled)
 cancel_mask = df_view["order item status"].str.lower() == "canceled"
 df_cancel = df_view[cancel_mask]
 cancel_qty = pd.to_numeric(df_cancel["quantity shipped"], errors="coerce").fillna(0).sum()
 
-# KPI 레이아웃
+# === KPI 레이아웃 ===
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Total Order Amount", f"${sales_sum:,.2f}")
 col2.metric("Total Order Quantity", f"{int(qty_sum):,}")
 col3.metric("AOV", f"${aov:,.2f}")
 col4.metric("Canceled Order", f"{int(cancel_qty):,}")
 
-# 일별 그래프
+# === 일별 판매 추이 ===
 st.subheader("일별 판매 추이")
 daily = df_sold.groupby("order date").agg({
     "quantity shipped": "sum",
@@ -78,7 +71,7 @@ daily = df_sold.groupby("order date").agg({
 daily = daily.sort_values("order date")
 st.line_chart(daily.set_index("order date")[["quantity shipped", "base price total"]])
 
-# 베스트셀러 10
+# === 베스트셀러 10 ===
 st.subheader("Best Seller 10")
 best = (
     df_sold.groupby("product number")["quantity shipped"].sum()

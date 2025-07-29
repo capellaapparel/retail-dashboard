@@ -73,21 +73,28 @@ def kpi_delta(now, prev):
     return f"<span style='color:{color}; font-size:0.95em;'>{arrow} {pct:.1f}%</span>"
 
 # === KPI 네모 카드 한 줄 & 증감 아래 표시
+def get_font_size(val):
+    # 7자 이상이면 폰트 줄임 (적당히 조절 가능)
+    return "2.1em" if len(str(int(val))) <= 7 else "1.45em"
+
 kpi_style = """
 <style>
 .kpi-card {display:inline-block; margin:0 10px 0 0; border-radius:18px; background:#fff; box-shadow:0 2px 8px #EEE; padding:20px 25px; min-width:170px; text-align:left; vertical-align:top;}
-.kpi-main {font-size:2.1em; font-weight:700; margin-bottom:0;}
+.kpi-main {font-weight:700; margin-bottom:0;}
 .kpi-label {font-size:1em; color:#444; margin-bottom:2px;}
 .kpi-delta {font-size:1em; margin-top:2px;}
 </style>
 """
 st.markdown(kpi_style, unsafe_allow_html=True)
-st.markdown("<div style='display:flex;'>"
-            f"<div class='kpi-card'><div class='kpi-label'>Total Order Amount</div><div class='kpi-main'>${sales_sum:,.2f}</div><div class='kpi-delta'>{kpi_delta(sales_sum, prev_sales)}</div></div>"
-            f"<div class='kpi-card'><div class='kpi-label'>Total Order Quantity</div><div class='kpi-main'>{int(qty_sum):,}</div><div class='kpi-delta'>{kpi_delta(qty_sum, prev_qty)}</div></div>"
-            f"<div class='kpi-card'><div class='kpi-label'>AOV</div><div class='kpi-main'>${aov:,.2f}</div><div class='kpi-delta'>{kpi_delta(aov, prev_aov)}</div></div>"
-            f"<div class='kpi-card'><div class='kpi-label'>Canceled Order</div><div class='kpi-main'>{int(cancel_qty):,}</div><div class='kpi-delta'>{kpi_delta(cancel_qty, prev_cancel)}</div></div>"
-            "</div>", unsafe_allow_html=True)
+
+st.markdown(
+    "<div style='display:flex;'>"
+    f"<div class='kpi-card'><div class='kpi-label'>Total Order Amount</div><div class='kpi-main' style='font-size:{get_font_size(sales_sum)};'>${sales_sum:,.2f}</div><div class='kpi-delta'>{kpi_delta(sales_sum, prev_sales)}</div></div>"
+    f"<div class='kpi-card'><div class='kpi-label'>Total Order Quantity</div><div class='kpi-main' style='font-size:{get_font_size(qty_sum)};'>{int(qty_sum):,}</div><div class='kpi-delta'>{kpi_delta(qty_sum, prev_qty)}</div></div>"
+    f"<div class='kpi-card'><div class='kpi-label'>AOV</div><div class='kpi-main' style='font-size:{get_font_size(aov)};'>${aov:,.2f}</div><div class='kpi-delta'>{kpi_delta(aov, prev_aov)}</div></div>"
+    f"<div class='kpi-card'><div class='kpi-label'>Canceled Order</div><div class='kpi-main' style='font-size:{get_font_size(cancel_qty)};'>{int(cancel_qty):,}</div><div class='kpi-delta'>{kpi_delta(cancel_qty, prev_cancel)}</div></div>"
+    "</div>", unsafe_allow_html=True
+)
 
     
 # === 일별 그래프

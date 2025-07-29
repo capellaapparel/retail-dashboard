@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
-from utils import load_sales_data  # ← 예시. 실제 데이터 로딩 방식에 맞춰서 import
-
-def sales_dashboard(df_all):
+from datetime import timedelta
+from utils import load_sales_data  # 실제 utils.py에 있는 함수 import
 
 def get_periods(date_range):
     start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
@@ -50,7 +49,7 @@ def sales_dashboard(df_all):
         v = (val-prev)/prev*100
         emoji = "⬆️" if v > 0 else "⬇️" if v < 0 else ""
         color = "red" if v < 0 else "green"
-        return f"<span style='color:{color}'>{emoji} {v:.1f}%</span>"
+        return f"{emoji} {v:.1f}%"
 
     col1.metric("Total Order Amount", f"${kpi_sel['amount']:,.2f}", pct(kpi_sel["amount"], kpi_prev["amount"]))
     col2.metric("Total Order Quantity", f"{kpi_sel['qty']:,}", pct(kpi_sel["qty"], kpi_prev["qty"]))
@@ -73,9 +72,6 @@ def sales_dashboard(df_all):
     best = sel_df.groupby("product number").agg({"qty":"sum", "sales":"sum"}).reset_index().sort_values("qty", ascending=False).head(10)
     st.dataframe(best)
 
-    pass
 if __name__ == "__main__" or "st" in globals():
-    import streamlit as st
-    df_all = load_sales_data(st.secrets)   # <- secrets 넘겨줘야함
+    df_all = load_sales_data(st.secrets)   # utils.py에서 데이터 가져오는 함수
     sales_dashboard(df_all)
-

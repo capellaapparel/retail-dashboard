@@ -83,7 +83,7 @@ def shein_agg(df, start, end):
 st.markdown("""
 <style>
 body, .main, .block-container {background: #fafbfc !important;}
-.center-container {max-width:1200px; margin:0 auto; padding:0;}
+.center-container {max-width:2000px; margin:0 auto; padding:0;}
 .kpi-card {
     display:inline-block; margin:0 10px 0 0; border-radius:18px;
     background:#fff; box-shadow:0 2px 10px #EAEAEA;

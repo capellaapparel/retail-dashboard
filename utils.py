@@ -5,7 +5,6 @@ from oauth2client.service_account import ServiceAccountCredentials
 from dateutil import parser
 from datetime import timedelta
 
-
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
 
 def expand_date_range(date_range):
@@ -13,7 +12,7 @@ def expand_date_range(date_range):
     start = pd.to_datetime(date_range[0])
     end = pd.to_datetime(date_range[1]) + timedelta(days=1) - timedelta(seconds=1)
     return start, end
-    
+
 def load_google_sheet(sheet_name, st_secrets):
     scope = [
         "https://spreadsheets.google.com/feeds",
@@ -41,46 +40,6 @@ def parse_sheindate(dt):
         return pd.to_datetime(str(dt), errors="coerce", infer_datetime_format=True)
     except Exception:
         return pd.NaT
-
-def load_sales_data(secrets=None):
-    df.columns = [c.lower().strip() for c in df.columns]
-
-    # secrets 파라미터는 streamlit_app.py처럼 넘겨줘야함
-    PRODUCT_SHEET = "PRODUCT_INFO"
-    SHEIN_SHEET = "SHEIN_SALES"
-    TEMU_SHEET = "TEMU_SALES"
-    GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
-
-    from utils import load_google_sheet   # 이미 utils에 있으면 생략
-
-    df_shein = load_google_sheet(SHEIN_SHEET, secrets)
-    df_temu = load_google_sheet(TEMU_SHEET, secrets)
-
-    df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
-    df_temu["order date"]  = df_temu["purchase date"].apply(parse_temudate)
-
-    shein_sales = df_shein.rename(columns={
-        "product description": "product number",
-        "qty": "qty",
-        "product price": "unit price"
-    }).copy()
-    shein_sales["platform"] = "SHEIN"
-    shein_sales["qty"] = pd.to_numeric(shein_sales["qty"], errors="coerce").fillna(0)
-    shein_sales["sales"] = shein_sales["qty"] * pd.to_numeric(shein_sales["unit price"], errors="coerce").fillna(0)
-
-    temu_sales = df_temu.rename(columns={
-        "product number": "product number",
-        "qty": "qty",
-        "base price total": "unit price"
-    }).copy()
-    temu_sales["platform"] = "TEMU"
-    temu_sales["qty"] = pd.to_numeric(temu_sales["qty"], errors="coerce").fillna(0)
-    temu_sales["sales"] = temu_sales["qty"] * pd.to_numeric(temu_sales["unit price"], errors="coerce").fillna(0)
-
-    df_all = pd.concat([shein_sales, temu_sales], ignore_index=True)
-    df_all = df_all[df_all["order date"].notna()]
-    return df_all
-
 
 def show_price_block(st, label, value):
     if value not in ("", None, float("nan")) and str(value).strip() not in ("", "nan", "NaN"):

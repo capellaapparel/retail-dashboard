@@ -19,52 +19,44 @@ if style_input:
         selected = st.selectbox("스타일 선택", matched["product number"].astype(str))
         row = df_info[df_info["product number"] == selected].iloc[0]
         image_url = str(row.get("image", "")).strip()
+
         st.markdown("---")
-        # --- 스타일 정보: 좌우 배치 ---
+        # --- 좌: 사진 / 우: 정보 ---
+        col1, col2 = st.columns([1.1, 2])
+        with col1:
+            if image_url:
+                st.image(image_url, use_container_width=True)
+            else:
+                st.caption("이미지 없음")
+        with col2:
+            st.markdown(
+                f"""
+                <div style='font-size:1.05em; line-height:1.65;'>
+                <b>Product Number:</b> {row['product number']}<br>
+                <b>ERP PRICE:</b> {row.get('erp price', 'NA')}<br>
+                <b>TEMU PRICE:</b> {get_latest_temu_price(df_temu, selected)}<br>
+                <b>SHEIN PRICE:</b> {get_latest_shein_price(df_shein, selected)}<br>
+                <b>SLEEVE:</b> {row.get('sleeve', '')}<br>
+                <b>NECKLINE:</b> {row.get('neckline', '')}<br>
+                <b>LENGTH:</b> {row.get('length', '')}<br>
+                <b>FIT:</b> {row.get('fit', '')}<br>
+                <b>DETAIL:</b> {row.get('detail', '')}<br>
+                <b>STYLE MOOD:</b> {row.get('style mood', '')}<br>
+                <b>MODEL:</b> {row.get('model', '')}<br>
+                <b>NOTES:</b> {row.get('notes', '')}
+                </div>
+                """, unsafe_allow_html=True
+            )
+
+        # --- Size Chart Section ---
+        st.markdown("---")
         st.markdown(
-            """
-            <style>
-            .flex-row {display:flex; flex-direction:row; align-items:flex-start; margin-bottom:40px;}
-            .img-block {min-width:240px; max-width:260px; margin-right:44px;}
-            .img-block img {width:100%; height:auto; border-radius:12px;}
-            .desc-block {font-size:1.05em;}
-            </style>
-            """,
+            "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>"
+            "<span style='font-size:1.28em;'>📝 <b>Size Chart</b></span></div>", 
             unsafe_allow_html=True
         )
-        st.markdown("<div class='flex-row'>", unsafe_allow_html=True)
-        # 이미지 왼쪽, 정보 오른쪽
-        st.markdown("<div class='img-block'>", unsafe_allow_html=True)
-        if image_url:
-            st.image(image_url, use_column_width=True)
-        else:
-            st.caption("이미지 없음")
-        st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='desc-block'>", unsafe_allow_html=True)
-        # 상세 정보
-        st.markdown(
-            f"""<b>Product Number:</b> {row['product number']}<br>
-            <b>ERP PRICE:</b> {row.get('erp price', 'NA')}<br>
-            <b>TEMU PRICE:</b> {get_latest_temu_price(df_temu, selected)}<br>
-            <b>SHEIN PRICE:</b> {get_latest_shein_price(df_shein, selected)}<br>
-            <b>SLEEVE:</b> {row.get('sleeve', '')}<br>
-            <b>NECKLINE:</b> {row.get('neckline', '')}<br>
-            <b>LENGTH:</b> {row.get('length', '')}<br>
-            <b>FIT:</b> {row.get('fit', '')}<br>
-            <b>DETAIL:</b> {row.get('detail', '')}<br>
-            <b>STYLE MOOD:</b> {row.get('style mood', '')}<br>
-            <b>MODEL:</b> {row.get('model', '')}<br>
-            <b>NOTES:</b> {row.get('notes', '')}
-            """,
-            unsafe_allow_html=True,
-        )
-        st.markdown("</div></div>", unsafe_allow_html=True)
-
-        # --- 사이즈 차트 ---
-        st.markdown("---")
-        st.markdown("<div style='display:flex;align-items:center;gap:10px;margin-bottom:12px;'><span style='font-size:1.4em;'>📝 <b>Size Chart</b></span></div>", unsafe_allow_html=True)
-
+        # 사이즈 표 생성
         top1_vals = (row.get("top1_chest", ""), row.get("top1_length", ""), row.get("top1_sleeve", ""))
         top2_vals = (row.get("top2_chest", ""), row.get("top2_length", ""), row.get("top2_sleeve", ""))
         bottom_vals = (row.get("bottom_waist", ""), row.get("bottom_hip", ""), row.get("bottom_length", ""), row.get("bottom_inseam", ""))
@@ -75,7 +67,7 @@ if style_input:
         size_table_html = ""
         if has_size_data(*top1_vals):
             size_table_html += f"""
-            <table style='width:380px; margin:auto; margin-bottom:10px; border-collapse:collapse; text-align:center;' border='1'>
+            <table style='width:370px; margin:auto; margin-bottom:10px; border-collapse:collapse; text-align:center;'>
                 <tr style="background:#F7F7F7"><th colspan='2'>Top 1</th></tr>
                 <tr><td>Chest</td><td>{top1_vals[0]}</td></tr>
                 <tr><td>Length</td><td>{top1_vals[1]}</td></tr>
@@ -84,7 +76,7 @@ if style_input:
             """
         if has_size_data(*top2_vals):
             size_table_html += f"""
-            <table style='width:380px; margin:auto; margin-bottom:10px; border-collapse:collapse; text-align:center;' border='1'>
+            <table style='width:370px; margin:auto; margin-bottom:10px; border-collapse:collapse; text-align:center;'>
                 <tr style="background:#F7F7F7"><th colspan='2'>Top 2</th></tr>
                 <tr><td>Chest</td><td>{top2_vals[0]}</td></tr>
                 <tr><td>Length</td><td>{top2_vals[1]}</td></tr>
@@ -93,7 +85,7 @@ if style_input:
             """
         if has_size_data(*bottom_vals):
             size_table_html += f"""
-            <table style='width:380px; margin:auto; border-collapse:collapse; text-align:center;' border='1'>
+            <table style='width:370px; margin:auto; border-collapse:collapse; text-align:center;'>
                 <tr style="background:#F7F7F7"><th colspan='2'>Bottom</th></tr>
                 <tr><td>Waist</td><td>{bottom_vals[0]}</td></tr>
                 <tr><td>Hip</td><td>{bottom_vals[1]}</td></tr>
@@ -103,6 +95,6 @@ if style_input:
             """
 
         if size_table_html:
-            st.markdown(f"<div style='width:430px; margin:auto; margin-bottom:30px'>{size_table_html}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='width:440px; margin:auto; margin-bottom:30px'>{size_table_html}</div>", unsafe_allow_html=True)
         else:
             st.caption("사이즈 정보가 없습니다.")

@@ -119,13 +119,17 @@ elif platform == "SHEIN":
 else:  # BOTH
     ss1, q1, a1, c1, df1 = temu_agg(df_temu, start, end)
     ss2, q2, a2, c2, df2 = shein_agg(df_shein, start, end)
-    sales_sum, qty_sum, cancel_qty = ss1 + ss2, q1 + q2, c1 + c2
+    sales_sum = ss1 + ss2
+    qty_sum = int(q1) + int(q2)   # <== 여기서 int로 합산!
+    cancel_qty = int(c1) + int(c2)
     aov = sales_sum / qty_sum if qty_sum > 0 else 0
-    df_sold = pd.concat([df1, df2])
+    df_sold = pd.concat([df1, df2], ignore_index=True)
     # prev
     pss1, pq1, pa1, pc1, _ = temu_agg(df_temu, prev_start, prev_end)
     pss2, pq2, pa2, pc2, _ = shein_agg(df_shein, prev_start, prev_end)
-    prev_sales, prev_qty, prev_cancel = pss1 + pss2, pq1 + pq2, pc1 + pc2
+    prev_sales = pss1 + pss2
+    prev_qty = int(pq1) + int(pq2)
+    prev_cancel = int(pc1) + int(pc2)
     prev_aov = prev_sales / prev_qty if prev_qty > 0 else 0
 
 # --- KPI 카드 스타일 ---
@@ -172,11 +176,30 @@ if platform == "SHEIN":
     daily["qty"] = 1
     daily = daily.groupby("order date").agg({"Total Sales":"sum", "qty":"sum"}).reset_index()
     st.line_chart(daily.set_index("order date")[["qty", "Total Sales"]])
-else:
+elif platform == "TEMU":
     daily = df_sold.groupby("order date").agg({
         "quantity shipped": "sum",
         "base price total": "sum"
     }).reset_index().rename(columns={"quantity shipped":"qty", "base price total":"Total Sales"})
+    st.line_chart(daily.set_index("order date")[["qty", "Total Sales"]])
+else:
+    # BOTH: 날짜별로 각각 groupby 후 merge(sum)
+    daily_temu = df_temu[df_temu["order date"].between(start, end)]
+    daily_temu = daily_temu[daily_temu["order item status"].str.lower().isin(["shipped", "delivered"])]
+    temu_daily = daily_temu.groupby("order date").agg({
+        "quantity shipped": "sum",
+        "base price total": "sum"
+    }).reset_index().rename(columns={"quantity shipped":"qty", "base price total":"Total Sales"})
+    daily_shein = df_shein[df_shein["order date"].between(start, end)]
+    daily_shein = daily_shein[~daily_shein["order status"].str.lower().isin(["customer refunded"])]
+    shein_daily = daily_shein.groupby("order date").agg({"product price":"sum"}).reset_index().rename(columns={"product price":"Total Sales"})
+    shein_daily["qty"] = 1
+    shein_daily = shein_daily.groupby("order date").agg({"Total Sales":"sum", "qty":"sum"}).reset_index()
+    # 날짜 기준 합치기
+    daily = pd.merge(temu_daily, shein_daily, on="order date", how="outer", suffixes=('_temu', '_shein')).fillna(0)
+    daily["Total Sales"] = daily["Total Sales_temu"] + daily["Total Sales_shein"]
+    daily["qty"] = daily["qty_temu"] + daily["qty_shein"]
+    daily = daily[["order date", "qty", "Total Sales"]].sort_values("order date")
     st.line_chart(daily.set_index("order date")[["qty", "Total Sales"]])
 
 # --- 베스트셀러 TOP 10: 사진, 스타일넘버, 판매량 ---
@@ -186,11 +209,27 @@ if platform == "SHEIN":
     best["이미지"] = best["product description"].astype(str).map(info_img_dict)
     best = best[["이미지", "product description", "판매수량"]]
     best.columns = ["Image", "Style Number", "Sold Qty"]
-else:
+elif platform == "TEMU":
     best = df_sold.groupby("product number")["quantity shipped"].sum().reset_index().sort_values("quantity shipped", ascending=False).head(10)
     best["이미지"] = best["product number"].astype(str).map(info_img_dict)
     best = best[["이미지", "product number", "quantity shipped"]]
     best.columns = ["Image", "Style Number", "Sold Qty"]
+else:
+    # BOTH: TEMU/SHEIN 각각 스타일넘버별 집계 후 합치기
+    best_temu = df_temu[df_temu["order item status"].str.lower().isin(["shipped", "delivered"])]
+    best_temu = best_temu[best_temu["order date"].between(start, end)]
+    b1 = best_temu.groupby("product number")["quantity shipped"].sum().reset_index()
+    b1.columns = ["Style Number", "Sold Qty"]
+    b2 = df_shein[~df_shein["order status"].str.lower().isin(["customer refunded"])]
+    b2 = b2[b2["order date"].between(start, end)]
+    b2 = b2.groupby("product description").size().reset_index(name="Sold Qty")
+    b2.columns = ["Style Number", "Sold Qty"]
+    best = pd.concat([b1, b2])
+    best = best.groupby("Style Number")["Sold Qty"].sum().reset_index()
+    best["Sold Qty"] = best["Sold Qty"].astype(int)   # <== 소수점 방지!
+    best["Image"] = best["Style Number"].astype(str).map(info_img_dict)
+    best = best[["Image", "Style Number", "Sold Qty"]].sort_values("Sold Qty", ascending=False).head(10)
+
 
 def make_img_tag(url):
     if pd.notna(url) and str(url).startswith("http"):

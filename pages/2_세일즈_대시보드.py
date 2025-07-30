@@ -69,8 +69,8 @@ def temu_agg(df, start, end):
     sales_sum = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0).sum()
     aov = sales_sum / qty_sum if qty_sum > 0 else 0
     # === 캔슬 오더 개선!
-    st.write(df["order item status"].unique())
-    cancel_mask = df["order item status"].fillna("").str.lower() == "canceled"
+    st.write(df_view["order item status"].unique())
+    cancel_mask = df["order item status"].fillna("").str.lower() == "Canceled"
     cancel_qty = pd.to_numeric(df[cancel_mask]["quantity shipped"], errors="coerce").fillna(0).sum()
     return sales_sum, qty_sum, aov, cancel_qty, df_sold
 

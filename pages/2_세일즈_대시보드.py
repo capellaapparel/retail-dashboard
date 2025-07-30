@@ -151,9 +151,14 @@ else:  # BOTH
     prev_sales, prev_qty, prev_cancel = pss1 + pss2, pq1 + pq2, pc1 + pc2
     prev_aov = prev_sales / prev_qty if prev_qty > 0 else 0
 
-# KPI 카드
+# KPI 카드 (조건부 포맷 반드시 분리)
+if sales_sum < 1e6:
+    sales_sum_str = f"{sales_sum:,.2f}$"
+else:
+    sales_sum_str = f"{sales_sum:,.0f}$"
+
 st.markdown("<div class='center-container'><div style='display:flex;'>"
-    f"<div class='kpi-card'><div class='kpi-label'>Total Order Amount</div><div class='kpi-main'>{sales_sum:,.2f if sales_sum < 1e6 else 0f}$</div><div class='kpi-delta'>{kpi_delta(sales_sum, prev_sales)}</div></div>"
+    f"<div class='kpi-card'><div class='kpi-label'>Total Order Amount</div><div class='kpi-main'>{sales_sum_str}</div><div class='kpi-delta'>{kpi_delta(sales_sum, prev_sales)}</div></div>"
     f"<div class='kpi-card'><div class='kpi-label'>Total Order Quantity</div><div class='kpi-main'>{int(qty_sum):,}</div><div class='kpi-delta'>{kpi_delta(qty_sum, prev_qty)}</div></div>"
     f"<div class='kpi-card'><div class='kpi-label'>AOV</div><div class='kpi-main'>${aov:,.2f}</div><div class='kpi-delta'>{kpi_delta(aov, prev_aov)}</div></div>"
     f"<div class='kpi-card' style='max-width:145px; min-width:120px;'><div class='kpi-label'>Canceled Order</div><div class='kpi-main'>{int(cancel_qty):,}</div><div class='kpi-delta'>{kpi_delta(cancel_qty, prev_cancel)}</div></div>"
@@ -213,7 +218,6 @@ if platform == "BOTH":
     summary["Sold Qty"] = summary["TEMU Qty"] + summary["SHEIN Qty"]
     summary = summary.sort_values("Sold Qty", ascending=False).head(10)
     summary["Image"] = summary.index.map(info_img_dict)
-    # 예쁜 스타일: Sold Qty <span>(TEMU: xx, SHEIN: yy)</span>
     summary["Sold Qty"] = (
         summary["Sold Qty"].astype(int).astype(str) + 
         "<br><span style='color:#bbb; font-size:0.97em'>(TEMU: " +

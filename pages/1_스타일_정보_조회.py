@@ -22,7 +22,7 @@ if style_input:
 
         st.markdown("---")
         # --- 좌: 사진 / 우: 정보 ---
-        col1, col2 = st.columns([1.1, 2])
+        col1, col2 = st.columns([1, 2])
         with col1:
             if image_url:
                 st.image(image_url, use_container_width=True)

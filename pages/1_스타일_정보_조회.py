@@ -49,7 +49,7 @@ if style_input:
 
             def has_size_data(*args):
                 return any(str(v).strip() not in ["", "0", "0.0"] for v in args)
- <div justify-content:center;>
+
 
             top1_vals = (row.get("top1_chest", ""), row.get("top1_length", ""), row.get("top1_sleeve", ""))
             top2_vals = (row.get("top2_chest", ""), row.get("top2_length", ""), row.get("top2_sleeve", ""))
@@ -88,5 +88,5 @@ if style_input:
             else:
                 st.caption("사이즈 정보가 없습니다.")
 
-</div>
+
 

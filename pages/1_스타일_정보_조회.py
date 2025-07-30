@@ -27,16 +27,22 @@ if style_input:
         <style>
         .info-card {padding: 10px 20px 10px 0; font-size: 1.1em;}
         .style-table th, .style-table td {padding: 6px 18px;}
-        @media (max-width:400px) {.info-card {font-size:0.95em;}}
+        @media (max-width:900px) {.info-card {font-size:0.95em;}}
         </style>
         """, unsafe_allow_html=True)
         col1, col2 = st.columns([1, 2])
-        with col1:
-            if image_url:
-                st.image(image_url, use_column_width="always")
-            else:
-                st.caption("이미지 없음")
-        with col2:
+with col1:
+    st.markdown(
+        "<style>.img-frame {margin-bottom:16px; border-radius:12px; overflow:hidden;}</style>",
+        unsafe_allow_html=True
+    )
+    if image_url:
+        st.markdown(f"<div class='img-frame'>", unsafe_allow_html=True)
+        st.image(image_url, width=300)   # 고정 너비(원하면 260~350px로 조절)
+        st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.caption("이미지 없음")
+with col2:
             st.markdown(
                 f"<div class='info-card'>"
                 f"<h4 style='margin-top:0'>{row.get('default product name(en)','')}</h4>"

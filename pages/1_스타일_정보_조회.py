@@ -25,7 +25,7 @@ if style_input:
         col1, col2 = st.columns([1, 3])
         with col1:
             if image_url:
-                st.image(image_url, use_container_width=True)
+                st.image(image_url, use_container_width=True, width=300)
             else:
                 st.caption("이미지 없음")
         with col2:

@@ -21,11 +21,11 @@ if style_input:
         image_url = str(row.get("image", "")).strip()
 
         st.markdown("---")
-        # --- 좌: 사진 / 우: 정보 ---
-        col1, col2 = st.columns([1, 3])
+        # 사진 좌측, 정보 우측 (사진 크기 제한)
+        col1, col2 = st.columns([0.8, 2])
         with col1:
             if image_url:
-                st.image(image_url, width=300)
+                st.image(image_url, width=260)  # width 직접 제한
             else:
                 st.caption("이미지 없음")
         with col2:
@@ -56,45 +56,29 @@ if style_input:
             unsafe_allow_html=True
         )
 
-        # 사이즈 표 생성
-        top1_vals = (row.get("top1_chest", ""), row.get("top1_length", ""), row.get("top1_sleeve", ""))
-        top2_vals = (row.get("top2_chest", ""), row.get("top2_length", ""), row.get("top2_sleeve", ""))
-        bottom_vals = (row.get("bottom_waist", ""), row.get("bottom_hip", ""), row.get("bottom_length", ""), row.get("bottom_inseam", ""))
-
-        def has_size_data(*args):
-            return any(str(v).strip() not in ["", "0", "0.0"] for v in args)
-
-        size_table_html = ""
-        if has_size_data(*top1_vals):
-            size_table_html += f"""
-            <table style='width:370px; margin:auto; margin-bottom:10px; border-collapse:collapse; text-align:center;'>
-                <tr style="background:#F7F7F7"><th colspan='2'>Top 1</th></tr>
-                <tr><td>Chest</td><td>{top1_vals[0]}</td></tr>
-                <tr><td>Length</td><td>{top1_vals[1]}</td></tr>
-                <tr><td>Sleeve</td><td>{top1_vals[2]}</td></tr>
-            </table>
-            """
-        if has_size_data(*top2_vals):
-            size_table_html += f"""
-            <table style='width:370px; margin:auto; margin-bottom:10px; border-collapse:collapse; text-align:center;'>
-                <tr style="background:#F7F7F7"><th colspan='2'>Top 2</th></tr>
-                <tr><td>Chest</td><td>{top2_vals[0]}</td></tr>
-                <tr><td>Length</td><td>{top2_vals[1]}</td></tr>
-                <tr><td>Sleeve</td><td>{top2_vals[2]}</td></tr>
-            </table>
-            """
-        if has_size_data(*bottom_vals):
-            size_table_html += f"""
-            <table style='width:370px; margin:auto; border-collapse:collapse; text-align:center;'>
-                <tr style="background:#F7F7F7"><th colspan='2'>Bottom</th></tr>
-                <tr><td>Waist</td><td>{bottom_vals[0]}</td></tr>
-                <tr><td>Hip</td><td>{bottom_vals[1]}</td></tr>
-                <tr><td>Length</td><td>{bottom_vals[2]}</td></tr>
-                <tr><td>Inseam</td><td>{bottom_vals[3]}</td></tr>
-            </table>
+        # --- 표 생성 함수 ---
+        def make_table(title, labels, values):
+            if not any([v not in ["", "0", "0.0", 0, 0.0, None] for v in values]):
+                return ""
+            rows = "".join([f"<tr><td>{l}</td><td>{v}</td></tr>" for l,v in zip(labels,values)])
+            return f"""
+                <table style='width:370px; margin:auto; margin-bottom:10px; border-collapse:collapse; text-align:center;'>
+                    <tr style="background:#F7F7F7"><th colspan='2'>{title}</th></tr>
+                    {rows}
+                </table>
             """
 
+        top1_html = make_table("Top 1", ["Chest","Length","Sleeve"], [
+            row.get("top1_chest",""), row.get("top1_length",""), row.get("top1_sleeve","")
+        ])
+        top2_html = make_table("Top 2", ["Chest","Length","Sleeve"], [
+            row.get("top2_chest",""), row.get("top2_length",""), row.get("top2_sleeve","")
+        ])
+        bottom_html = make_table("Bottom", ["Waist","Hip","Length","Inseam"], [
+            row.get("bottom_waist",""), row.get("bottom_hip",""), row.get("bottom_length",""), row.get("bottom_inseam","")
+        ])
+        size_table_html = "".join([top1_html, top2_html, bottom_html])
         if size_table_html:
-            st.markdown(f"<div style='width:440px; margin:auto; margin-bottom:30px'>{size_table_html}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='width:450px; margin:auto; margin-bottom:30px'>{size_table_html}</div>", unsafe_allow_html=True)
         else:
             st.caption("사이즈 정보가 없습니다.")

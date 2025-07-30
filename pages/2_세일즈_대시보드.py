@@ -83,16 +83,16 @@ def shein_agg(df, start, end):
 st.markdown("""
 <style>
 body, .main, .block-container {background: #fafbfc !important;}
-.center-container {max-width:1500px; margin:0 auto; padding:0;}
+.center-container {max-width:1200px; margin:0 auto; padding:0;}
 .kpi-card {
-    display:inline-block; margin:0 14px 0 0; border-radius:18px;
+    display:inline-block; margin:0 10px 0 0; border-radius:18px;
     background:#fff; box-shadow:0 2px 10px #EAEAEA;
-    padding:18px 32px 15px 32px;
-    min-width:240px; max-width:240px; text-align:left;
+    padding:18px 28px 15px 26px;
+    min-width:215px; max-width:235px; text-align:left;
     vertical-align:top; transition:box-shadow .2s;
 }
-.kpi-main {font-size:2.08em; font-weight:700; margin-bottom:0;}
-.kpi-label {font-size:1.06em; color:#444; margin-bottom:2px;}
+.kpi-main {font-size:2.05em; font-weight:700; margin-bottom:0;}
+.kpi-label {font-size:1.02em; color:#444; margin-bottom:2px;}
 .kpi-delta {font-size:1.01em; margin-top:3px;}
 .kpi-card:hover {box-shadow:0 4px 14px #d1e1fa;}
 .best-table {width:100%!important; background:#fff;}
@@ -100,7 +100,6 @@ body, .main, .block-container {background: #fafbfc !important;}
 .best-table td, .best-table th {padding:11px 17px !important; text-align:center;}
 .best-table tr {border-bottom:1px solid #f2f2f2;}
 .best-table img {border-radius:10px; box-shadow:0 2px 8px #EEE;}
-@media (max-width:1700px) {.center-container{max-width:1200px;}}
 @media (max-width:1300px) {.center-container{max-width:1000px;}}
 @media (max-width:1000px) {.center-container{max-width:800px;}}
 </style>
@@ -154,17 +153,16 @@ else:  # BOTH
 
 # KPI 카드 (조건부 포맷 반드시 분리)
 if sales_sum < 1e6:
-    sales_sum_str = f"${sales_sum:,.2f}"
+    sales_sum_str = f"{sales_sum:,.2f}$"
 else:
-    sales_sum_str = f"${sales_sum:,.0f}"
+    sales_sum_str = f"{sales_sum:,.0f}$"
 
 st.markdown("<div class='center-container'><div style='display:flex;'>"
     f"<div class='kpi-card'><div class='kpi-label'>Total Order Amount</div><div class='kpi-main'>{sales_sum_str}</div><div class='kpi-delta'>{kpi_delta(sales_sum, prev_sales)}</div></div>"
     f"<div class='kpi-card'><div class='kpi-label'>Total Order Quantity</div><div class='kpi-main'>{int(qty_sum):,}</div><div class='kpi-delta'>{kpi_delta(qty_sum, prev_qty)}</div></div>"
     f"<div class='kpi-card'><div class='kpi-label'>AOV</div><div class='kpi-main'>${aov:,.2f}</div><div class='kpi-delta'>{kpi_delta(aov, prev_aov)}</div></div>"
-    f"<div class='kpi-card'><div class='kpi-label'>Canceled Order</div><div class='kpi-main'>{int(cancel_qty):,}</div><div class='kpi-delta'>{kpi_delta(cancel_qty, prev_cancel)}</div></div>"
+    f"<div class='kpi-card' style='max-width:145px; min-width:120px;'><div class='kpi-label'>Canceled Order</div><div class='kpi-main'>{int(cancel_qty):,}</div><div class='kpi-delta'>{kpi_delta(cancel_qty, prev_cancel)}</div></div>"
     "</div></div>", unsafe_allow_html=True)
-
 
 # --- 일별 판매 그래프 ---
 st.subheader("일별 판매 추이")

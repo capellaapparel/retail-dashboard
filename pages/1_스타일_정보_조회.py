@@ -58,12 +58,25 @@ if style_input:
         ), unsafe_allow_html=True)
 
         # 2. 아래쪽 전체 폭(=넓게) 사이즈 차트 카드 스타일!
+        st.markdown("<hr>", unsafe_allow_html=True)
         st.markdown("""
-        <div style="width:100%; display:flex; flex-direction:column; align-items:center; margin-bottom:26px;">
-            <div style='font-size:1.6em; font-weight:700; margin-bottom:16px; margin-top:8px;'>
-                <span style='font-size:1.2em;'>✏️</span> Size Chart
-            </div>
-        """, unsafe_allow_html=True)
+        <div style='display:flex; flex-direction:column; align-items:center; margin-top:32px; margin-bottom:12px;'>
+    <span style='font-size:2em; font-weight:700;'>📝 Size Chart</span>
+    <table style='width:420px; margin-top:18px; border-collapse:collapse;'>
+        <tr><th colspan='2'>Top 1</th></tr>
+        <tr><td>Chest</td><td>{}</td></tr>
+        <tr><td>Length</td><td>{}</td></tr>
+        <tr><td>Sleeve</td><td>{}</td></tr>
+    </table>
+    <table style='width:420px; margin-top:18px; border-collapse:collapse;'>
+        <tr><th colspan='2'>Bottom</th></tr>
+        <tr><td>Waist</td><td>{}</td></tr>
+        <tr><td>Hip</td><td>{}</td></tr>
+        <tr><td>Length</td><td>{}</td></tr>
+        <tr><td>Inseam</td><td>{}</td></tr>
+    </table>
+</div>
+        """.format(*top1_vals, *bottom_vals), unsafe_allow_html=True)
 
         def has_size_data(*args):
             return any(str(v).strip() not in ["", "0", "0.0"] for v in args)

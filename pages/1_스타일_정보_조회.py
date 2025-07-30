@@ -23,7 +23,7 @@ if style_input:
         col1, col2 = st.columns([1, 2])
         with col1:
             if image_url:
-                st.image(image_url, width=300, use_column_width=False)
+                st.image(image_url, width=300, centered)
             else:
                 st.caption("이미지 없음")
         with col2:

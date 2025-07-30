@@ -21,29 +21,29 @@ if style_input:
         row = df_info[df_info["product number"] == selected].iloc[0]
         image_url = str(row.get("image", "")).strip()
 
-        # 레이아웃: 이미지와 정보 박스 중앙 정렬
+        # 1. 이미지+정보 한줄에! (가운데로)
         st.markdown("""
-        <div style="display: flex; justify-content: center; align-items: flex-start; gap:60px;">
-            <div>
+        <div style="display:flex; justify-content:center; align-items:flex-start; gap:60px; margin-bottom:28px;">
+            <div style="flex-shrink:0;">
                 %s
             </div>
-            <div style="min-width:350px;">
-                <h4 style='margin-bottom:10px;'><b>Product Number:</b> %s</h4>
-                <p><b>ERP PRICE:</b> %s</p>
-                <p><b>TEMU PRICE:</b> %s</p>
-                <p><b>SHEIN PRICE:</b> %s</p>
-                <p><b>SLEEVE:</b> %s</p>
-                <p><b>NECKLINE:</b> %s</p>
-                <p><b>LENGTH:</b> %s</p>
-                <p><b>FIT:</b> %s</p>
-                <p><b>STYLE MOOD:</b> %s</p>
-                <p><b>MODEL:</b> %s</p>
-                <p><b>NOTES:</b> %s</p>
+            <div style="min-width:330px; max-width:420px;">
+                <div style="font-size:1.15em; margin-bottom:8px;"><b>Product Number:</b> %s</div>
+                <div><b>ERP PRICE:</b> %s</div>
+                <div><b>TEMU PRICE:</b> %s</div>
+                <div><b>SHEIN PRICE:</b> %s</div>
+                <div><b>SLEEVE:</b> %s</div>
+                <div><b>NECKLINE:</b> %s</div>
+                <div><b>LENGTH:</b> %s</div>
+                <div><b>FIT:</b> %s</div>
+                <div><b>STYLE MOOD:</b> %s</div>
+                <div><b>MODEL:</b> %s</div>
+                <div><b>NOTES:</b> %s</div>
             </div>
         </div>
-        <hr style="margin:40px 0 16px 0;">
+        <hr style="margin:24px 0 20px 0;">
         """ % (
-            f"<img src='{image_url}' width='270' style='border-radius:16px;'>" if image_url else "<p>이미지 없음</p>",
+            f"<img src='{image_url}' width='260' style='border-radius:14px; box-shadow:0 1px 6px #bbb;'>" if image_url else "<p>이미지 없음</p>",
             row.get("product number", ""),
             f"${row.get('erp price', '')}" if row.get("erp price", "") else "",
             get_latest_temu_price(df_temu, selected),
@@ -57,12 +57,13 @@ if style_input:
             row.get("notes", ""),
         ), unsafe_allow_html=True)
 
-        # --- 사이즈 차트 영역 ---
-        st.markdown(
-            "<div style='width:100%; display:flex; flex-direction:column; align-items:center; margin-top:16px;'>"
-            "<div style='font-size:1.5em; font-weight:700; margin-bottom:8px;'><span style='font-size:1.2em;'>✏️</span> Size Chart</div>",
-            unsafe_allow_html=True
-        )
+        # 2. 아래쪽 전체 폭(=넓게) 사이즈 차트 카드 스타일!
+        st.markdown("""
+        <div style="width:100%; display:flex; flex-direction:column; align-items:center; margin-bottom:26px;">
+            <div style='font-size:1.6em; font-weight:700; margin-bottom:16px; margin-top:8px;'>
+                <span style='font-size:1.2em;'>✏️</span> Size Chart
+            </div>
+        """, unsafe_allow_html=True)
 
         def has_size_data(*args):
             return any(str(v).strip() not in ["", "0", "0.0"] for v in args)
@@ -71,36 +72,37 @@ if style_input:
         top2_vals = (row.get("top2_chest", ""), row.get("top2_length", ""), row.get("top2_sleeve", ""))
         bottom_vals = (row.get("bottom_waist", ""), row.get("bottom_hip", ""), row.get("bottom_length", ""), row.get("bottom_inseam", ""))
 
-        html_parts = []
+        size_html = ""
         if has_size_data(*top1_vals):
-            html_parts.append(f"""
-                <table style='width:380px; margin:0 auto 12px auto; border-collapse:collapse;'>
-                <tr><th colspan='2' style='text-align:center; background:#f5f5f5;'>Top 1</th></tr>
-                <tr><td style='width:100px;'>Chest</td><td>{top1_vals[0]}</td></tr>
+            size_html += f"""
+                <table style='width:420px; margin:0 auto 12px auto; border-collapse:collapse; background:white; border-radius:10px; box-shadow:0 2px 8px #eee;'>
+                <tr><th colspan='2' style='text-align:center; background:#f8f8f8; font-size:1.08em; border-radius:8px 8px 0 0;'>Top 1</th></tr>
+                <tr><td style='width:110px;'>Chest</td><td>{top1_vals[0]}</td></tr>
                 <tr><td>Length</td><td>{top1_vals[1]}</td></tr>
                 <tr><td>Sleeve</td><td>{top1_vals[2]}</td></tr>
                 </table>
-            """)
+            """
         if has_size_data(*top2_vals):
-            html_parts.append(f"""
-                <table style='width:380px; margin:0 auto 12px auto; border-collapse:collapse;'>
-                <tr><th colspan='2' style='text-align:center; background:#f5f5f5;'>Top 2</th></tr>
-                <tr><td style='width:100px;'>Chest</td><td>{top2_vals[0]}</td></tr>
+            size_html += f"""
+                <table style='width:420px; margin:0 auto 12px auto; border-collapse:collapse; background:white; border-radius:10px; box-shadow:0 2px 8px #eee;'>
+                <tr><th colspan='2' style='text-align:center; background:#f8f8f8; font-size:1.08em;'>Top 2</th></tr>
+                <tr><td style='width:110px;'>Chest</td><td>{top2_vals[0]}</td></tr>
                 <tr><td>Length</td><td>{top2_vals[1]}</td></tr>
                 <tr><td>Sleeve</td><td>{top2_vals[2]}</td></tr>
                 </table>
-            """)
+            """
         if has_size_data(*bottom_vals):
-            html_parts.append(f"""
-                <table style='width:380px; margin:0 auto 16px auto; border-collapse:collapse;'>
-                <tr><th colspan='2' style='text-align:center; background:#f5f5f5;'>Bottom</th></tr>
-                <tr><td style='width:100px;'>Waist</td><td>{bottom_vals[0]}</td></tr>
+            size_html += f"""
+                <table style='width:420px; margin:0 auto 16px auto; border-collapse:collapse; background:white; border-radius:10px; box-shadow:0 2px 8px #eee;'>
+                <tr><th colspan='2' style='text-align:center; background:#f8f8f8; font-size:1.08em;'>Bottom</th></tr>
+                <tr><td style='width:110px;'>Waist</td><td>{bottom_vals[0]}</td></tr>
                 <tr><td>Hip</td><td>{bottom_vals[1]}</td></tr>
                 <tr><td>Length</td><td>{bottom_vals[2]}</td></tr>
                 <tr><td>Inseam</td><td>{bottom_vals[3]}</td></tr>
                 </table>
-            """)
-        if html_parts:
-            st.markdown("".join(html_parts) + "</div>", unsafe_allow_html=True)
-        else:
+            """
+        st.markdown(size_html + "</div>", unsafe_allow_html=True)
+
+        if not size_html:
             st.caption("사이즈 정보가 없습니다.")
+

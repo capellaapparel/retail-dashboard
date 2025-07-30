@@ -84,15 +84,11 @@ def load_sales_data(secrets=None):
 
 def show_price_block(st, label, value):
     if value not in ("", None, float("nan")) and str(value).strip() not in ("", "nan", "NaN"):
-        try:
-            v = str(value).strip()
-            if v.startswith("$"):
-                price = v
-            else:
-                price = f"${v}"
-            st.markdown(f"**{label}:** {price}")
-        except:
-            st.markdown(f"**{label}:** {value}")
+        v = str(value).strip()
+        price = v if v.startswith("$") else f"${v}"
+        st.markdown(f"<b>{label}:</b> {price}<br>", unsafe_allow_html=True)
+        return f"<b>{label}:</b> {price}<br>"
+    return ""
 
 def get_latest_shein_price(df_sales, product_number):
     filtered = df_sales[

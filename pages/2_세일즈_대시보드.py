@@ -71,7 +71,7 @@ def temu_agg(df, start, end):
     # === 캔슬 오더 개선!
     
     cancel_mask = df["order item status"].fillna("").str.lower() == "Canceled"
-    cancel_qty = pd.to_numeric(df[cancel_mask]["quantity shipped"], errors="coerce").fillna(0).sum()
+    cancel_qty = pd.to_numeric(df[cancel_mask]["quantity purchased"], errors="coerce").fillna(0).sum()
     return sales_sum, qty_sum, aov, cancel_qty, df_sold
 
 # 2. SHEIN Sales 집계

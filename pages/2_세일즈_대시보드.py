@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from dateutil import parser
 
+# --- 구글시트 데이터 불러오기 ---
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name):
     import gspread
@@ -63,7 +64,7 @@ def temu_agg(df, start, end):
     qty_sum = pd.to_numeric(df_sold["quantity shipped"], errors="coerce").fillna(0).sum()
     sales_sum = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0).sum()
     aov = sales_sum / qty_sum if qty_sum > 0 else 0
-    # **캔슬 오더는 quantity purchased 사용!**
+    # **캔슬 오더는 quantity purchased 사용**
     cancel_qty = pd.to_numeric(df[df["order item status"].str.lower()=="canceled"]["quantity purchased"], errors="coerce").fillna(0).sum()
     return sales_sum, qty_sum, aov, cancel_qty, df_sold
 
@@ -79,20 +80,22 @@ def shein_agg(df, start, end):
     return sales_sum, qty_sum, aov, cancel_qty, df_sold
 
 # --- 대시보드 UI ---
+st.set_page_config(page_title="세일즈 대시보드", layout="wide")
 
+# 스타일: 전체 폭 넉넉히, KPI 카드 동일폭
 st.markdown("""
 <style>
-body, .main, .block-container {background: #fafbfc !important;}
-.center-container {max-width:1500px; margin:0 auto; padding:0;}
+.center-container {max-width:1440px; margin:0 auto;}
+.kpi-row {display:flex; gap:22px; flex-wrap:wrap;}
 .kpi-card {
-    display:inline-block; margin:0 10px 0 0; border-radius:18px;
-    background:#fff; box-shadow:0 2px 10px #EAEAEA;
-    padding:18px 28px 15px 26px;
-    min-width:215px; max-width:235px; text-align:left;
-    vertical-align:top; transition:box-shadow .2s;
+    flex:1 1 280px; min-width:230px; max-width:320px;
+    border-radius:18px; background:#fff; box-shadow:0 2px 10px #EAEAEA;
+    padding:22px 24px 16px 26px; margin-bottom:8px;
+    text-align:left; vertical-align:top; transition:box-shadow .2s;
+    display:flex; flex-direction:column; align-items:flex-start;
 }
 .kpi-main {font-size:2.05em; font-weight:700; margin-bottom:0;}
-.kpi-label {font-size:1.02em; color:#444; margin-bottom:2px;}
+.kpi-label {font-size:1.08em; color:#444; margin-bottom:2px;}
 .kpi-delta {font-size:1.01em; margin-top:3px;}
 .kpi-card:hover {box-shadow:0 4px 14px #d1e1fa;}
 .best-table {width:100%!important; background:#fff;}
@@ -100,8 +103,6 @@ body, .main, .block-container {background: #fafbfc !important;}
 .best-table td, .best-table th {padding:11px 17px !important; text-align:center;}
 .best-table tr {border-bottom:1px solid #f2f2f2;}
 .best-table img {border-radius:10px; box-shadow:0 2px 8px #EEE;}
-@media (max-width:1300px) {.center-container{max-width:1000px;}}
-@media (max-width:1000px) {.center-container{max-width:800px;}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -151,58 +152,75 @@ else:  # BOTH
     prev_sales, prev_qty, prev_cancel = pss1 + pss2, pq1 + pq2, pc1 + pc2
     prev_aov = prev_sales / prev_qty if prev_qty > 0 else 0
 
-# KPI 카드 (조건부 포맷 반드시 분리)
-if sales_sum < 1e6:
-    sales_sum_str = f"{sales_sum:,.2f}$"
-else:
-    sales_sum_str = f"{sales_sum:,.0f}$"
-
-st.markdown("<div class='center-container'><div style='display:flex;'>"
-    f"<div class='kpi-card'><div class='kpi-label'>Total Order Amount</div><div class='kpi-main'>{sales_sum_str}</div><div class='kpi-delta'>{kpi_delta(sales_sum, prev_sales)}</div></div>"
-    f"<div class='kpi-card'><div class='kpi-label'>Total Order Quantity</div><div class='kpi-main'>{int(qty_sum):,}</div><div class='kpi-delta'>{kpi_delta(qty_sum, prev_qty)}</div></div>"
-    f"<div class='kpi-card'><div class='kpi-label'>AOV</div><div class='kpi-main'>${aov:,.2f}</div><div class='kpi-delta'>{kpi_delta(aov, prev_aov)}</div></div>"
-    f"<div class='kpi-card' style='max-width:145px; min-width:120px;'><div class='kpi-label'>Canceled Order</div><div class='kpi-main'>{int(cancel_qty):,}</div><div class='kpi-delta'>{kpi_delta(cancel_qty, prev_cancel)}</div></div>"
-    "</div></div>", unsafe_allow_html=True)
+# KPI 카드
+st.markdown(f"""
+<div class='center-container'>
+  <div class='kpi-row'>
+    <div class='kpi-card'>
+      <div class='kpi-label'>Total Order Amount</div>
+      <div class='kpi-main'>${sales_sum:,.2f}</div>
+      <div class='kpi-delta'>{kpi_delta(sales_sum, prev_sales)}</div>
+    </div>
+    <div class='kpi-card'>
+      <div class='kpi-label'>Total Order Quantity</div>
+      <div class='kpi-main'>{int(qty_sum):,}</div>
+      <div class='kpi-delta'>{kpi_delta(qty_sum, prev_qty)}</div>
+    </div>
+    <div class='kpi-card'>
+      <div class='kpi-label'>AOV</div>
+      <div class='kpi-main'>${aov:,.2f}</div>
+      <div class='kpi-delta'>{kpi_delta(aov, prev_aov)}</div>
+    </div>
+    <div class='kpi-card'>
+      <div class='kpi-label'>Canceled Order</div>
+      <div class='kpi-main'>{int(cancel_qty):,}</div>
+      <div class='kpi-delta'>{kpi_delta(cancel_qty, prev_cancel)}</div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
 # --- 일별 판매 그래프 ---
 st.subheader("일별 판매 추이")
-if platform == "SHEIN":
-    daily = df_sold.groupby("order date").agg({"product price":"sum"}).reset_index().rename(columns={"product price":"Total Sales"})
-    daily["qty"] = 1
-    daily = daily.groupby("order date").agg({"Total Sales":"sum", "qty":"sum"}).reset_index()
-    if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
-        st.line_chart(daily.set_index("order date")[["qty", "Total Sales"]])
-    else:
-        st.info("일별 판매 데이터가 없습니다.")
-elif platform == "TEMU":
-    daily = df_sold.groupby("order date").agg({
-        "quantity shipped": "sum",
-        "base price total": "sum"
-    }).reset_index().rename(columns={"quantity shipped":"qty", "base price total":"Total Sales"})
-    if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
-        st.line_chart(daily.set_index("order date")[["qty", "Total Sales"]])
-    else:
-        st.info("일별 판매 데이터가 없습니다.")
-else:
-    # BOTH (qty: temu qty + shein qty, sales: temu+shein)
-    temu_daily = df_temu[(df_temu["order date"] >= start) & (df_temu["order date"] <= end)]
-    temu_daily = temu_daily[temu_daily["order item status"].str.lower().isin(["shipped", "delivered"])]
-    temu_group = temu_daily.groupby("order date").agg({"quantity shipped":"sum", "base price total":"sum"})
-    shein_daily = df_shein[(df_shein["order date"] >= start) & (df_shein["order date"] <= end)]
-    shein_daily = shein_daily[~shein_daily["order status"].str.lower().isin(["customer refunded"])]
-    shein_group = shein_daily.groupby("order date").agg({"product price":"sum"})
-    shein_group["qty"] = 1
-    shein_group = shein_group.groupby("order date").agg({"qty":"sum", "product price":"sum"})
-    # 합치기
-    both_daily = pd.DataFrame({
-        "qty": temu_group["quantity shipped"].fillna(0).add(shein_group["qty"].fillna(0), fill_value=0),
-        "Total Sales": temu_group["base price total"].fillna(0).add(shein_group["product price"].fillna(0), fill_value=0)
-    }).reset_index()
-    if not both_daily.empty and "qty" in both_daily.columns and "Total Sales" in both_daily.columns:
-        st.line_chart(both_daily.set_index("order date")[["qty", "Total Sales"]])
-    else:
-        st.info("일별 판매 데이터가 없습니다.")
+plot_success = False
 
+try:
+    if platform == "SHEIN":
+        daily = df_sold.groupby("order date").agg({"product price":"sum"}).reset_index().rename(columns={"product price":"Total Sales"})
+        daily["qty"] = 1
+        daily = daily.groupby("order date").agg({"Total Sales":"sum", "qty":"sum"}).reset_index()
+        if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
+            st.line_chart(daily.set_index("order date")[["qty", "Total Sales"]])
+            plot_success = True
+    elif platform == "TEMU":
+        daily = df_sold.groupby("order date").agg({
+            "quantity shipped": "sum",
+            "base price total": "sum"
+        }).reset_index().rename(columns={"quantity shipped":"qty", "base price total":"Total Sales"})
+        if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
+            st.line_chart(daily.set_index("order date")[["qty", "Total Sales"]])
+            plot_success = True
+    else:
+        temu_daily = df_temu[(df_temu["order date"] >= start) & (df_temu["order date"] <= end)]
+        temu_daily = temu_daily[temu_daily["order item status"].str.lower().isin(["shipped", "delivered"])]
+        temu_group = temu_daily.groupby("order date").agg({"quantity shipped":"sum", "base price total":"sum"})
+        shein_daily = df_shein[(df_shein["order date"] >= start) & (df_shein["order date"] <= end)]
+        shein_daily = shein_daily[~shein_daily["order status"].str.lower().isin(["customer refunded"])]
+        shein_group = shein_daily.groupby("order date").agg({"product price":"sum"})
+        shein_group["qty"] = 1
+        shein_group = shein_group.groupby("order date").agg({"qty":"sum", "product price":"sum"})
+        both_daily = pd.DataFrame({
+            "qty": temu_group["quantity shipped"].fillna(0).add(shein_group["qty"].fillna(0), fill_value=0),
+            "Total Sales": temu_group["base price total"].fillna(0).add(shein_group["product price"].fillna(0), fill_value=0)
+        }).reset_index()
+        if not both_daily.empty and "qty" in both_daily.columns and "Total Sales" in both_daily.columns:
+            st.line_chart(both_daily.set_index("order date")[["qty", "Total Sales"]])
+            plot_success = True
+except Exception as e:
+    plot_success = False
+
+if not plot_success:
+    st.info("일별 판매 데이터가 없습니다.")
 
 # --- 베스트셀러 TOP 10: 사진, 스타일넘버, 판매량 ---
 st.subheader("Best Seller 10")

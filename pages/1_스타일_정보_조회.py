@@ -27,7 +27,7 @@ if style_input:
         <style>
         .info-card {padding: 10px 20px 10px 0; font-size: 1.1em;}
         .style-table th, .style-table td {padding: 6px 18px;}
-        @media (max-width:900px) {.info-card {font-size:0.95em;}}
+        @media (max-width:400px) {.info-card {font-size:0.95em;}}
         </style>
         """, unsafe_allow_html=True)
         col1, col2 = st.columns([1, 2])

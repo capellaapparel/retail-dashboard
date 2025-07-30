@@ -56,11 +56,8 @@ if style_input:
         )
 
         # 표 생성 함수
-def has_any_value(values):
-    return any(str(v).strip() not in ["", "0", "0.0", "None", "nan"] and v is not None for v in values)
-
 def make_table(title, labels, values):
-    if not has_any_value(values):
+    if not any(str(v).strip() not in ["", "0", "0.0", "None", "nan"] and v is not None for v in values):
         return ""
     rows = "".join([f"<tr><td>{l}</td><td>{v}</td></tr>" for l, v in zip(labels, values)])
     return f"""
@@ -73,17 +70,14 @@ def make_table(title, labels, values):
 top1_html = make_table("Top 1", ["Chest", "Length", "Sleeve"], [
     row.get("top1_chest",""), row.get("top1_length",""), row.get("top1_sleeve","")
 ])
-top2_html = make_table("Top 2", ["Chest", "Length", "Sleeve"], [
-    row.get("top2_chest",""), row.get("top2_length",""), row.get("top2_sleeve","")
-])
 bottom_html = make_table("Bottom", ["Waist", "Hip", "Length", "Inseam"], [
     row.get("bottom_waist",""), row.get("bottom_hip",""), row.get("bottom_length",""), row.get("bottom_inseam","")
 ])
 
-# 표를 모두 합쳐서 **한 번에** 출력!
-all_tables = "".join([top1_html, top2_html, bottom_html])
+# 💡 **이렇게 합쳐서 출력해야 함!**
+all_tables = "".join([top1_html, bottom_html])
 
-if all_tables:
+if all_tables.strip():
     st.markdown(
         f"<div style='display:flex; justify-content:center; width:100%; margin-top:12px;'>{all_tables}</div>",
         unsafe_allow_html=True

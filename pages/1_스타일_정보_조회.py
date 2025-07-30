@@ -64,44 +64,52 @@ if style_input:
         def has_size_data(*args):
             return any(str(v).strip() not in ["", "0", "0.0"] for v in args)
 
-        # 사이즈 표 전체 넓게
-        top1_vals = (row.get("top1_chest", ""), row.get("top1_length", ""), row.get("top1_sleeve", ""))
-        top2_vals = (row.get("top2_chest", ""), row.get("top2_length", ""), row.get("top2_sleeve", ""))
-        bottom_vals = (
-            row.get("bottom_waist", ""), row.get("bottom_hip", ""),
-            row.get("bottom_length", ""), row.get("bottom_inseam", "")
-        )
-        html_parts = []
-        if has_size_data(*top1_vals):
-            html_parts.append(f"""
-            <table style='width:360px; margin:auto; margin-bottom:10px; border-collapse:collapse; text-align:center;' border='1'>
-                <tr style="background:#F7F7F7"><th colspan='2'>Top 1</th></tr>
-                <tr><td>Chest</td><td>{top1_vals[0]}</td></tr>
-                <tr><td>Length</td><td>{top1_vals[1]}</td></tr>
-                <tr><td>Sleeve</td><td>{top1_vals[2]}</td></tr>
-            </table>
-            """)
-        if has_size_data(*top2_vals):
-            html_parts.append(f"""
-            <table style='width:360px; margin:auto; margin-bottom:10px; border-collapse:collapse; text-align:center;' border='1'>
-                <tr style="background:#F7F7F7"><th colspan='2'>Top 2</th></tr>
-                <tr><td>Chest</td><td>{top2_vals[0]}</td></tr>
-                <tr><td>Length</td><td>{top2_vals[1]}</td></tr>
-                <tr><td>Sleeve</td><td>{top2_vals[2]}</td></tr>
-            </table>
-            """)
-        if has_size_data(*bottom_vals):
-            html_parts.append(f"""
-            <table style='width:360px; margin:auto; border-collapse:collapse; text-align:center;' border='1'>
-                <tr style="background:#F7F7F7"><th colspan='2'>Bottom</th></tr>
-                <tr><td>Waist</td><td>{bottom_vals[0]}</td></tr>
-                <tr><td>Hip</td><td>{bottom_vals[1]}</td></tr>
-                <tr><td>Length</td><td>{bottom_vals[2]}</td></tr>
-                <tr><td>Inseam</td><td>{bottom_vals[3]}</td></tr>
-            </table>
-            """)
-        if html_parts:
-            st.markdown("<div style='width:100%;text-align:center'>" + "".join(html_parts) + "</div>", unsafe_allow_html=True)
-        else:
-            st.caption("사이즈 정보가 없습니다.")
+        # --- 사이즈 차트 표 전체 넓게 ---
+top1_vals = (row.get("top1_chest", ""), row.get("top1_length", ""), row.get("top1_sleeve", ""))
+top2_vals = (row.get("top2_chest", ""), row.get("top2_length", ""), row.get("top2_sleeve", ""))
+bottom_vals = (
+    row.get("bottom_waist", ""), row.get("bottom_hip", ""),
+    row.get("bottom_length", ""), row.get("bottom_inseam", "")
+)
+
+def has_size_data(*args):
+    return any(str(v).strip() not in ["", "0", "0.0"] for v in args)
+
+size_table_html = ""
+if has_size_data(*top1_vals):
+    size_table_html += f"""
+    <table style='width:360px; margin:auto; margin-bottom:10px; border-collapse:collapse; text-align:center;' border='1'>
+        <tr style="background:#F7F7F7"><th colspan='2'>Top 1</th></tr>
+        <tr><td>Chest</td><td>{top1_vals[0]}</td></tr>
+        <tr><td>Length</td><td>{top1_vals[1]}</td></tr>
+        <tr><td>Sleeve</td><td>{top1_vals[2]}</td></tr>
+    </table>
+    """
+if has_size_data(*top2_vals):
+    size_table_html += f"""
+    <table style='width:360px; margin:auto; margin-bottom:10px; border-collapse:collapse; text-align:center;' border='1'>
+        <tr style="background:#F7F7F7"><th colspan='2'>Top 2</th></tr>
+        <tr><td>Chest</td><td>{top2_vals[0]}</td></tr>
+        <tr><td>Length</td><td>{top2_vals[1]}</td></tr>
+        <tr><td>Sleeve</td><td>{top2_vals[2]}</td></tr>
+    </table>
+    """
+if has_size_data(*bottom_vals):
+    size_table_html += f"""
+    <table style='width:360px; margin:auto; border-collapse:collapse; text-align:center;' border='1'>
+        <tr style="background:#F7F7F7"><th colspan='2'>Bottom</th></tr>
+        <tr><td>Waist</td><td>{bottom_vals[0]}</td></tr>
+        <tr><td>Hip</td><td>{bottom_vals[1]}</td></tr>
+        <tr><td>Length</td><td>{bottom_vals[2]}</td></tr>
+        <tr><td>Inseam</td><td>{bottom_vals[3]}</td></tr>
+    </table>
+    """
+
+if size_table_html:
+    st.markdown(
+        f"<div style='width:100%;text-align:center'>{size_table_html}</div>",
+        unsafe_allow_html=True,
+    )
+else:
+    st.caption("사이즈 정보가 없습니다.")
 

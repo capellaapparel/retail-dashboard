@@ -63,15 +63,16 @@ info_img_dict = dict(zip(df_info["product number"].astype(str), df_info["image"]
 def temu_agg(df, start, end):
     mask = (df["order date"] >= start) & (df["order date"] <= end)
     df = df[mask].copy()
-    sold_mask = df["order item status"].fillna("").str.lower().isin(["shipped", "delivered"])
+    sold_mask = df["order item status"].fillna("").str.lower().str.strip().isin(["shipped", "delivered"])
     df_sold = df[sold_mask]
     qty_sum = pd.to_numeric(df_sold["quantity shipped"], errors="coerce").fillna(0).sum()
     sales_sum = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0).sum()
     aov = sales_sum / qty_sum if qty_sum > 0 else 0
-    # === 캔슬 오더 개선!
-    
-    cancel_mask = df["order item status"].fillna("").str.lower() == "Canceled"
+
+    # Canceled는 quantity purchased 기준!
+    cancel_mask = df["order item status"].fillna("").str.lower().str.strip().isin(["canceled", "cancelled"])
     cancel_qty = pd.to_numeric(df[cancel_mask]["quantity purchased"], errors="coerce").fillna(0).sum()
+
     return sales_sum, qty_sum, aov, cancel_qty, df_sold
 
 # 2. SHEIN Sales 집계

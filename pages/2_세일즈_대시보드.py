@@ -77,17 +77,20 @@ def shein_agg(df, start, end):
 st.markdown("""
 <style>
 .center-container {max-width:1320px; margin:0 auto;}
+.kpi-row {display: flex; width: 100%; justify-content: space-between;}
 .kpi-card {
-    display:inline-block; margin:0 13px 0 0; border-radius:18px;
+    display:inline-block; border-radius:18px;
     background:#fff; box-shadow:0 2px 10px #EAEAEA;
     padding:19px 32px 16px 30px;
-    min-width:250px; max-width:260px; text-align:left;
-    vertical-align:top; transition:box-shadow .2s;
+    width: 24.5%;        /* ← ★ 4등분 정확히 맞춤 */
+    min-width:220px; max-width:350px;
+    text-align:left; vertical-align:top; transition:box-shadow .2s;
+    margin: 0 0.5% 0 0;
 }
 .kpi-main {font-size:2.01em; font-weight:700; margin-bottom:0;}
 .kpi-label {font-size:1.07em; color:#444; margin-bottom:3px;}
 .kpi-delta {font-size:1.01em; margin-top:3px;}
-.kpi-card:last-child {min-width:250px; max-width:260px;}
+.kpi-card:last-child {margin-right: 0;}
 .kpi-card:hover {box-shadow:0 4px 14px #d1e1fa;}
 .best-table {width:100%!important; background:#fff;}
 .best-table th {background:#f6f8fa; font-weight:600; color:#3c3c3c;}
@@ -147,7 +150,7 @@ else:  # BOTH
 # --- KPI 카드 ---
 sales_sum_str = f"${sales_sum:,.2f}"
 kpi_box = (
-    f"<div class='center-container'><div style='display:flex;'>"
+    f"<div class='center-container'><div class='kpi-row'>"
     f"<div class='kpi-card'><div class='kpi-label'>Total Order Amount</div><div class='kpi-main'>{sales_sum_str}</div><div class='kpi-delta'>{kpi_delta(sales_sum, prev_sales)}</div></div>"
     f"<div class='kpi-card'><div class='kpi-label'>Total Order Quantity</div><div class='kpi-main'>{int(qty_sum):,}</div><div class='kpi-delta'>{kpi_delta(qty_sum, prev_qty)}</div></div>"
     f"<div class='kpi-card'><div class='kpi-label'>AOV</div><div class='kpi-main'>${aov:,.2f}</div><div class='kpi-delta'>{kpi_delta(aov, prev_aov)}</div></div>"
@@ -155,6 +158,7 @@ kpi_box = (
     "</div></div>"
 )
 st.markdown(kpi_box, unsafe_allow_html=True)
+
 
 # --- 일별 판매 그래프 ---
 st.subheader("일별 판매 추이")

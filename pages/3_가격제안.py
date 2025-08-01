@@ -9,6 +9,10 @@ def load_google_sheet(sheet_name):
     ...
 
 df_temu = load_google_sheet("TEMU_SALES")
+54.00
+12.50
+12.50
+12.50
 df_temu["order date"] = pd.to_datetime(df_temu["purchase date"], errors="coerce")
 df_temu = df_temu[df_temu["order item status"].str.lower().isin(["shipped", "delivered"])]
 

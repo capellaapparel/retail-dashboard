@@ -158,46 +158,41 @@ st.markdown(kpi_box, unsafe_allow_html=True)
 
 # --- 일별 판매 그래프 ---
 st.subheader("일별 판매 추이")
-if platform == "SHEIN":
-    daily = df_sold.groupby("order date").agg({"product price":"sum"}).reset_index().rename(columns={"product price":"Total Sales"})
-    daily["qty"] = 1
-    daily = daily.groupby("order date").agg({"Total Sales":"sum", "qty":"sum"}).reset_index()
-    daily = daily.set_index("order date")
-    try:
-    if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
-        st.line_chart(daily[["qty", "Total Sales"]])
+try:
+    if platform == "SHEIN":
+        daily = df_sold.groupby("order date").agg({"product price":"sum"}).reset_index().rename(columns={"product price":"Total Sales"})
+        daily["qty"] = 1
+        daily = daily.groupby("order date").agg({"Total Sales":"sum", "qty":"sum"}).reset_index()
+        daily = daily.set_index("order date")
+        if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
+            st.line_chart(daily[["qty", "Total Sales"]])
+        else:
+            st.info("해당 기간에 데이터가 없습니다.")
+    elif platform == "TEMU":
+        daily = df_sold.groupby("order date").agg({
+            "quantity shipped": "sum",
+            "base price total": "sum"
+        }).reset_index().rename(columns={"quantity shipped":"qty", "base price total":"Total Sales"})
+        daily = daily.set_index("order date")
+        if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
+            st.line_chart(daily[["qty", "Total Sales"]])
+        else:
+            st.info("해당 기간에 데이터가 없습니다.")
     else:
-        st.info("해당 기간에 데이터가 없습니다.")
-except Exception as e:
-    st.warning("그래프를 표시할 수 없습니다. 기간 내 데이터가 없거나 잘못된 데이터가 포함되어 있습니다.")
-elif platform == "TEMU":
-    daily = df_sold.groupby("order date").agg({
-        "quantity shipped": "sum",
-        "base price total": "sum"
-    }).reset_index().rename(columns={"quantity shipped":"qty", "base price total":"Total Sales"})
-    daily = daily.set_index("order date")
-    try:
-    if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
-        st.line_chart(daily[["qty", "Total Sales"]])
-    else:
-        st.info("해당 기간에 데이터가 없습니다.")
-except Exception as e:
-    st.warning("그래프를 표시할 수 없습니다. 기간 내 데이터가 없거나 잘못된 데이터가 포함되어 있습니다.")
-else:
-    # BOTH (qty: temu qty + shein qty, sales: temu+shein)
-    temu_daily = df_temu[(df_temu["order date"] >= start) & (df_temu["order date"] <= end)]
-    temu_daily = temu_daily[temu_daily["order item status"].str.lower().isin(["shipped", "delivered"])]
-    temu_group = temu_daily.groupby("order date").agg({"quantity shipped":"sum", "base price total":"sum"})
-    shein_daily = df_shein[(df_shein["order date"] >= start) & (df_shein["order date"] <= end)]
-    shein_daily = shein_daily[~shein_daily["order status"].str.lower().isin(["customer refunded"])]
-    shein_group = shein_daily.groupby("order date").agg({"product price":"sum"})
-    shein_group["qty"] = 1
-    shein_group = shein_group.groupby("order date").agg({"qty":"sum", "product price":"sum"})
-    both_daily = pd.DataFrame({
-        "qty": temu_group["quantity shipped"].fillna(0).add(shein_group["qty"].fillna(0), fill_value=0),
-        "Total Sales": temu_group["base price total"].fillna(0).add(shein_group["product price"].fillna(0), fill_value=0)
-    })
-    if not both_daily.empty and "qty" in both_daily.columns and "Total Sales" in both_daily.columns:
+        # BOTH (qty: temu qty + shein qty, sales: temu+shein)
+        temu_daily = df_temu[(df_temu["order date"] >= start) & (df_temu["order date"] <= end)]
+        temu_daily = temu_daily[temu_daily["order item status"].str.lower().isin(["shipped", "delivered"])]
+        temu_group = temu_daily.groupby("order date").agg({"quantity shipped":"sum", "base price total":"sum"})
+        shein_daily = df_shein[(df_shein["order date"] >= start) & (df_shein["order date"] <= end)]
+        shein_daily = shein_daily[~shein_daily["order status"].str.lower().isin(["customer refunded"])]
+        shein_group = shein_daily.groupby("order date").agg({"product price":"sum"})
+        shein_group["qty"] = 1
+        shein_group = shein_group.groupby("order date").agg({"qty":"sum", "product price":"sum"})
+        both_daily = pd.DataFrame({
+            "qty": temu_group["quantity shipped"].fillna(0).add(shein_group["qty"].fillna(0), fill_value=0),
+            "Total Sales": temu_group["base price total"].fillna(0).add(shein_group["product price"].fillna(0), fill_value=0)
+        })
+        if not both_daily.empty and "qty" in both_daily.columns and "Total Sales" in both_daily.columns:
             st.line_chart(both_daily[["qty", "Total Sales"]])
         else:
             st.info("해당 기간에 데이터가 없습니다.")

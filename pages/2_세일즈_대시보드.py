@@ -87,7 +87,7 @@ st.markdown("""
 .kpi-main {font-size:2.01em; font-weight:700; margin-bottom:0;}
 .kpi-label {font-size:1.07em; color:#444; margin-bottom:3px;}
 .kpi-delta {font-size:1.01em; margin-top:3px;}
-.kpi-card:last-child {min-width:150px; max-width:170px;}
+.kpi-card:last-child {min-width:250px; max-width:260px;}
 .kpi-card:hover {box-shadow:0 4px 14px #d1e1fa;}
 .best-table {width:100%!important; background:#fff;}
 .best-table th {background:#f6f8fa; font-weight:600; color:#3c3c3c;}
@@ -163,20 +163,26 @@ if platform == "SHEIN":
     daily["qty"] = 1
     daily = daily.groupby("order date").agg({"Total Sales":"sum", "qty":"sum"}).reset_index()
     daily = daily.set_index("order date")
+    try:
     if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
         st.line_chart(daily[["qty", "Total Sales"]])
     else:
         st.info("해당 기간에 데이터가 없습니다.")
+except Exception as e:
+    st.warning("그래프를 표시할 수 없습니다. 기간 내 데이터가 없거나 잘못된 데이터가 포함되어 있습니다.")
 elif platform == "TEMU":
     daily = df_sold.groupby("order date").agg({
         "quantity shipped": "sum",
         "base price total": "sum"
     }).reset_index().rename(columns={"quantity shipped":"qty", "base price total":"Total Sales"})
     daily = daily.set_index("order date")
+    try:
     if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
         st.line_chart(daily[["qty", "Total Sales"]])
     else:
         st.info("해당 기간에 데이터가 없습니다.")
+except Exception as e:
+    st.warning("그래프를 표시할 수 없습니다. 기간 내 데이터가 없거나 잘못된 데이터가 포함되어 있습니다.")
 else:
     # BOTH (qty: temu qty + shein qty, sales: temu+shein)
     temu_daily = df_temu[(df_temu["order date"] >= start) & (df_temu["order date"] <= end)]
@@ -192,9 +198,11 @@ else:
         "Total Sales": temu_group["base price total"].fillna(0).add(shein_group["product price"].fillna(0), fill_value=0)
     })
     if not both_daily.empty and "qty" in both_daily.columns and "Total Sales" in both_daily.columns:
-        st.line_chart(both_daily[["qty", "Total Sales"]])
-    else:
-        st.info("해당 기간에 데이터가 없습니다.")
+            st.line_chart(both_daily[["qty", "Total Sales"]])
+        else:
+            st.info("해당 기간에 데이터가 없습니다.")
+except Exception as e:
+    st.warning("그래프를 표시할 수 없습니다. 기간 내 데이터가 없거나 잘못된 데이터가 포함되어 있습니다.")
 
 # --- 베스트셀러 TOP 10: 사진, 스타일넘버, 판매량 ---
 st.subheader("Best Seller 10")

@@ -23,104 +23,95 @@ def load_google_sheet(sheet_name):
     df.columns = [c.lower().strip() for c in df.columns]
     return df
 
-st.title("AI 기반 가격 변경 필요 스타일 추천")
+st.title("AI 기반 신상 가격 제안")
 
 # 데이터 불러오기
+df_info = load_google_sheet("PRODUCT_INFO")
 df_temu = load_google_sheet("TEMU_SALES")
-df_temu = df_temu[df_temu["purchase date"].apply(lambda x: isinstance(x, str))]
-df_temu["order date"] = pd.to_datetime(df_temu["purchase date"], errors="coerce")
-df_temu = df_temu[df_temu["order date"].notna()]
-df_temu["quantity shipped"] = pd.to_numeric(df_temu["quantity shipped"], errors="coerce").fillna(0)
-df_temu["base price total"] = pd.to_numeric(df_temu["base price total"], errors="coerce").fillna(0)
+df_shein = load_google_sheet("SHEIN_SALES")
 
-today = df_temu["order date"].max()
-last_month = today - pd.Timedelta(days=30)
-prev_month = last_month - pd.Timedelta(days=30)
+# TEMU, SHEIN에서 한 번이라도 판매된 product number 추출
+sold_temus = set(df_temu["product number"].astype(str).unique())
+sold_sheins = set(df_shein["product description"].astype(str).unique())
+sold_total = sold_temus.union(sold_sheins)
 
-# [1] 최근 30일 / 그 이전 30일 판매량, 매출, AOV
-sold_status = ["shipped", "delivered"]
-recent = df_temu[
-    (df_temu["order date"] >= last_month) &
-    (df_temu["order date"] <= today) &
-    (df_temu["order item status"].str.lower().isin(sold_status))
-]
-prev = df_temu[
-    (df_temu["order date"] >= prev_month) &
-    (df_temu["order date"] < last_month) &
-    (df_temu["order item status"].str.lower().isin(sold_status))
-]
+# PRODUCT_INFO 전체 스타일 중 한번도 판매안된 애들 찾기
+all_products = df_info["product number"].astype(str).tolist()
+unsold = [p for p in all_products if p not in sold_total]
 
-grp_recent = recent.groupby("product number").agg(
-    recent_qty = ("quantity shipped", "sum"),
-    recent_sales = ("base price total", "sum"),
-    recent_order = ("order id", "nunique")
-)
-grp_recent["recent_aov"] = grp_recent["recent_sales"] / grp_recent["recent_order"].replace(0,1)
+# 추천 결과 저장
+suggest_rows = []
 
-grp_prev = prev.groupby("product number").agg(
-    prev_qty = ("quantity shipped", "sum"),
-    prev_sales = ("base price total", "sum"),
-    prev_order = ("order id", "nunique")
-)
-grp_prev["prev_aov"] = grp_prev["prev_sales"] / grp_prev["prev_order"].replace(0,1)
+for pn in unsold:
+    row = df_info[df_info["product number"].astype(str) == pn].iloc[0]
+    erp_price = row.get("erp price", "")
+    if pd.isna(erp_price) or str(erp_price).strip() == "":
+        continue
+    try:
+        erp_price = float(str(erp_price).replace("$", ""))
+    except:
+        erp_price = None
 
-# [2] 전체 평균 AOV (경쟁제품 평균)
-overall_aov = grp_recent["recent_aov"].mean()
+    # 스타일 유사도 기준: sleeve, length, neckline, fit 등
+    key_attrs = ["sleeve", "length", "neckline", "fit"]
+    attr_query = {k: str(row.get(k, "")).strip().lower() for k in key_attrs}
+    # TEMU에서 유사 스타일 찾기
+    match_temu = df_info.copy()
+    for k, v in attr_query.items():
+        if v and v != "nan":
+            match_temu = match_temu[match_temu[k].astype(str).str.lower() == v]
+    match_temu_nums = set(match_temu["product number"].astype(str).unique())
+    sold_matches = [s for s in match_temu_nums if s in sold_temus]
 
-# [3] 합치기
-summary = pd.concat([grp_recent, grp_prev], axis=1).fillna(0)
+    # 실제 판매된 TEMU 가격 참고 (최근 판매가)
+    temu_prices = []
+    for sold_pn in sold_matches:
+        sold_rows = df_temu[df_temu["product number"].astype(str) == sold_pn]
+        sold_rows = sold_rows[sold_rows["order item status"].str.lower().isin(["shipped", "delivered"])]
+        if not sold_rows.empty:
+            prices = pd.to_numeric(sold_rows["base price total"], errors="coerce")
+            qtys = pd.to_numeric(sold_rows["quantity shipped"], errors="coerce")
+            unit_prices = prices / qtys.replace(0,1)
+            temu_prices.extend(unit_prices[unit_prices>0].tolist())
 
-summary["판매량 증감률(%)"] = summary.apply(
-    lambda row: ((row["recent_qty"] - row["prev_qty"]) / row["prev_qty"] * 100)
-    if row["prev_qty"] > 0 else (100 if row["recent_qty"] > 0 else 0), axis=1
-)
+    # SHEIN도 마찬가지
+    sold_matches_shein = [s for s in match_temu_nums if s in sold_sheins]
+    shein_prices = []
+    for sold_pn in sold_matches_shein:
+        sold_rows = df_shein[df_shein["product description"].astype(str) == sold_pn]
+        sold_rows = sold_rows[~sold_rows["order status"].str.lower().isin(["customer refunded"])]
+        if not sold_rows.empty:
+            pps = pd.to_numeric(sold_rows["product price"], errors="coerce")
+            shein_prices.extend(pps[pps>0].tolist())
 
-# [4] “지속적으로 잘 팔리는 상품” 정의: 최근 30일/이전 30일 모두 판매 > 10
-summary["steady_seller"] = (summary["recent_qty"] >= 10) & (summary["prev_qty"] >= 10)
-
-# [5] AOV 경쟁 비교
-summary["aov_compared"] = summary["recent_aov"] - overall_aov
-
-# [6] 가격조정 ‘필요’ 추정
-def price_recommend(row):
-    if row["recent_qty"] == 0 and row["prev_qty"] > 0:
-        return "▼ 가격 인하 추천 (판매 중단)"
-    elif row["recent_qty"] > 0 and row["판매량 증감률(%)"] < -50:
-        return "▼ 가격 인하 검토 (판매 급감)"
-    elif row["steady_seller"]:
-        return "▲ 가격 인상 고려 (지속 인기)"
-    elif row["recent_qty"] > 0 and row["aov_compared"] < -2:
-        return "▲ 가격 인상 고려 (AOV 낮음)"
-    elif row["recent_qty"] > 0 and row["aov_compared"] > 2:
-        return "▼ 가격 인하 검토 (AOV 높음, 경쟁보다 비쌈)"
+    # 평균값 (동일 스타일, 같은 플랫폼 기준)
+    base_prices = temu_prices + shein_prices
+    base_prices = [p for p in base_prices if pd.notna(p) and p > 0]
+    if base_prices:
+        avg_price = round(sum(base_prices) / len(base_prices), 2)
+        # ERP의 1.1배~2배(너무 싸게 안잡히게, 유사스타일 판매가 평균보다 ERP가 높으면 ERP+0.5~1 정도 추천)
+        suggest_price = max(avg_price, erp_price * 1.1)
+    elif erp_price:
+        suggest_price = erp_price * 1.3  # 그냥 ERP의 1.3배(최소 마진)
     else:
-        return ""
-summary["가격조정 추천"] = summary.apply(price_recommend, axis=1)
+        suggest_price = ""
+    suggest_rows.append({
+        "Product Number": pn,
+        "Name": row.get("default product name(en)", ""),
+        "ERP Price": erp_price,
+        "유사 스타일 평균 판매가": round(avg_price,2) if base_prices else "",
+        "추천가격": round(suggest_price, 2) if suggest_price else ""
+    })
 
-recommend = summary[summary["가격조정 추천"] != ""]
-
-st.markdown("### 🔥 아래 스타일은 가격 조정이 필요할 수 있습니다")
-if recommend.empty:
-    st.info("가격 조정 필요 스타일이 없습니다. (모든 스타일이 정상 판매 중)")
+st.markdown("### 💡 판매기록 없는 스타일에 대한 가격 제안")
+df_out = pd.DataFrame(suggest_rows)
+if df_out.empty:
+    st.info("모든 스타일이 이미 판매기록이 있거나, 유사 스타일이 없습니다.")
 else:
-    show_cols = [
-        "recent_qty", "prev_qty", "판매량 증감률(%)", "recent_aov", "aov_compared", "가격조정 추천"
-    ]
-    pretty_names = [
-        "최근 30일 판매량", "이전 30일 판매량", "판매량 증감률(%)", "최근 AOV", "AOV-경쟁평균", "추천"
-    ]
-    show_df = recommend[show_cols]
-    show_df.columns = pretty_names
-    st.dataframe(show_df.style.format({
-        "최근 AOV": "${:,.2f}",
-        "AOV-경쟁평균": "${:,.2f}",
-        "판매량 증감률(%)": "{:.1f}%"
-    }))
+    st.dataframe(df_out)
 
-st.caption(
-    "기준 설명:\n"
-    "- 최근 30일간 판매량 0: 판매 중단, 가격 인하 추천\n"
-    "- 지난달 대비 판매량 급감: 가격 인하 검토\n"
-    "- 두 달 연속 판매량 10개↑: 가격 인상 고려\n"
-    "- AOV(평균 판매가)가 경쟁 제품보다 2달러 이상 낮거나 높음: 인상/인하 추천"
-)
+st.caption("""
+- 'ERP Price'보다 너무 낮게 제안하지 않으며,  
+- 동일/유사 스타일(슬리브, 길이, 넥라인 등) 중 실제 팔린 제품 가격 평균을 기반으로 제안합니다.
+- 최근 판매 내역이 없는 경우 ERP 기준 30%~40% 가산 추천
+""")

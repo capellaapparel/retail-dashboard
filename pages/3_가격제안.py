@@ -156,7 +156,7 @@ df_out = pd.DataFrame(recommend_rows)
 if df_out.empty:
     st.info("가격 제안/조정이 필요한 스타일이 없습니다.")
 else:
-    st.dataframe(df_out, height=600)
+    st.dataframe(df_out, height=1000)
 
 st.caption("""
 - ERP Price*1.3+2~7, 유사 스타일 평균가, 최근 판매트렌드 기반

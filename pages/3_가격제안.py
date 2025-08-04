@@ -108,6 +108,7 @@ def find_similar_price(row, df_info, temu_prices, shein_prices):
 
 # ----- 모든 스타일별 가격/판매 정보 취합 -----
 info = df_info.copy()
+for idx, row info.iterrows():
 # 가격: TEMU, SHEIN 마지막 거래 평균
 temu_price_dict = df_temu.groupby("product number")["base price total"].apply(
     lambda s: pd.to_numeric(s, errors="coerce").mean()

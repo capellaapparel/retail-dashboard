@@ -57,23 +57,36 @@ def get_sales(df, key, price_col, start, end):
     return cnt, amount
 
 # ----- 추천가 계산 -----
+def safe_float(x):
+    try:
+        return float(str(x).replace(",", "").strip())
+    except Exception:
+        return 0
+
 def suggest_price(row, similar_avg):
-    erp = float(row["erp price"]) if pd.notna(row["erp price"]) else 0
+    erp = safe_float(row.get("erp price", 0))
     if erp == 0:
         return "-", "ERP 없음"
     min_price = max(erp * 1.3 + 2, 9)
     std_price = max(erp * 1.3 + 7, 9)
-    # 비슷한 스타일 평균가 보정
-    use_similar = False
-    reason = ""
     if similar_avg is not None and not pd.isna(similar_avg) and similar_avg > 0:
         price = max(similar_avg, min_price)
-        use_similar = True
         reason = "유사 스타일 평균 반영"
     else:
         price = std_price
         reason = "기본 공식 적용"
     return f"{price:.2f}", reason
+
+st.write("ERP 컬럼명:", info.columns.tolist())
+
+price_list, reason_list = [], []
+for idx, row in info.iterrows():
+    similar_avg = find_similar_price(row, info, temu_price_dict, shein_price_dict)
+    sug, why = suggest_price(row, similar_avg)
+    price_list.append(sug)
+    reason_list.append(why)
+info["추천가"] = price_list
+info["추천사유"] = reason_list
 
 # ----- 비슷한 스타일 평균가 계산 -----
 def find_similar_price(row, df_info, temu_prices, shein_prices):

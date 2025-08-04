@@ -84,14 +84,25 @@ shein_qty_60 = get_qty(shein_60, "product description", None)
 
 # 가격 미지정/판매 없는 스타일
 def is_na(val):
-    return (pd.isna(val)) or (str(val).strip() in ["", "nan", "NA", "NaN"])
+    try:
+        # 빈값 또는 0이면 판매 없는 걸로 간주 (float 변환)
+        return (pd.isna(val)) or (float(val) == 0)
+    except:
+        return True  # 변환 안되는 값(빈 문자열 등)은 True 처리
 
 info_idx = df_info["product number"].astype(str)
+# 1. TEMU 데이터 가격 숫자 변환
+df_temu["base price total"] = pd.to_numeric(df_temu["base price total"], errors="coerce").fillna(0)
+df_shein["product price"] = pd.to_numeric(df_shein["product price"], errors="coerce").fillna(0)
+
 no_sale_mask = (
-    info_idx.map(lambda x: is_na(df_temu[df_temu["product number"] == x]["base price total"].sum()) and
-                          is_na(df_shein[df_shein["product description"] == x]["product price"].sum()))
+    info_idx.map(
+        lambda x: is_na(df_temu[df_temu["product number"] == x]["base price total"].sum()) and
+                  is_na(df_shein[df_shein["product description"] == x]["product price"].sum())
+    )
 )
 df_no_sale = df_info[no_sale_mask]
+
 
 # 판매 적은 스타일 (최근 30일 1~2개만 판매)
 def get_sale_num(x):

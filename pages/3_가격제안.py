@@ -5,7 +5,30 @@ from openai import OpenAI
 
 # --- (필요시 LLM 활용을 위해) OpenAI Key 셋팅 ---
 OPENAI_API_KEY = st.secrets.get("openai_api_key", "")
-client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+def get_ai_reason(prompt):
+    if not OPENAI_API_KEY:
+        return ""
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return resp.choices[0].message.content.strip()
+    except ImportError:
+        try:
+            import openai
+            openai.api_key = OPENAI_API_KEY
+            resp = openai.ChatCompletion.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return resp["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            return "AI 사유 생성에 실패했습니다."
+    except Exception as e:
+        return "AI 사유 생성에 실패했습니다."
 
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name):

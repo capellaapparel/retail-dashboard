@@ -1,7 +1,12 @@
 import streamlit as st
 import pandas as pd
 from dateutil import parser
-from openai import OpenAI
+import openai
+openai.api_key = OPENAI_API_KEY
+openai.ChatCompletion.create(
+    model="gpt-4o",
+    messages=[{"role":"user", "content": prompt}]
+)
 
 # --- (필요시 LLM 활용을 위해) OpenAI Key 셋팅 ---
 OPENAI_API_KEY = st.secrets.get("openai_api_key", "")

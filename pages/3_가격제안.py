@@ -95,10 +95,14 @@ def suggest_price(erp, ref_prices):
 info = df_info.copy()
 info["erp price"] = pd.to_numeric(info["erp price"], errors="coerce")
 info["temu price"] = info["product number"].map(
-    lambda x: df_temu[df_temu["product number"]==x]["base price total"].dropna().astype(float).mean()
+    lambda x: pd.to_numeric(
+        df_temu[df_temu["product number"]==x]["base price total"], errors="coerce"
+    ).dropna().mean()
 )
 info["shein price"] = info["product number"].map(
-    lambda x: df_shein[df_shein["product description"]==x]["product price"].dropna().astype(float).mean()
+    lambda x: pd.to_numeric(
+        df_shein[df_shein["product description"]==x]["product price"], errors="coerce"
+    ).dropna().mean()
 )
 info["temu_qty30"] = info["product number"].map(
     lambda x: df_temu[(df_temu["product number"]==x) & (df_temu["order date"]>=last_30d)]["quantity shipped"].sum()

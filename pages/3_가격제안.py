@@ -77,7 +77,6 @@ def suggest_price(row, similar_avg):
         reason = "기본 공식 적용"
     return f"{price:.2f}", reason
 
-st.write("ERP 컬럼명:", info.columns.tolist())
 
 price_list, reason_list = [], []
 for idx, row in info.iterrows():

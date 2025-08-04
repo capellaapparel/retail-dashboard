@@ -1,14 +1,14 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
 from dateutil import parser
+import numpy as np
 
-# 1. 구글시트 데이터 불러오기 (utils 함수 예시)
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name):
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
     import json
+
     GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
     scope = [
         "https://spreadsheets.google.com/feeds",
@@ -25,30 +25,6 @@ def load_google_sheet(sheet_name):
     df.columns = [c.lower().strip() for c in df.columns]
     return df
 
-# 2. OpenAI API (gpt-4o 사용)
-def get_ai_price_suggestion(prompt):
-    api_key = st.secrets.get("openai_api_key", "")
-    if not api_key:
-        return "OpenAI API Key 미설정"
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key)
-        resp = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return resp.choices[0].message.content.strip()
-    except Exception as e:
-        return f"AI 추천 실패: {e}"
-
-st.write("df_info 컬럼:", df_info.columns.tolist())
-
-# 3. 데이터 불러오기
-df_info = load_google_sheet("PRODUCT_INFO")
-df_shein = load_google_sheet("SHEIN_SALES")
-df_temu = load_google_sheet("TEMU_SALES")
-
-# 날짜 파싱
 def parse_temudate(dt):
     try:
         return parser.parse(str(dt).split('(')[0].strip(), fuzzy=True)
@@ -61,186 +37,132 @@ def parse_sheindate(dt):
     except Exception:
         return pd.NaT
 
+# ========== 데이터 불러오기 ==========
+df_info = load_google_sheet("PRODUCT_INFO")
+df_temu = load_google_sheet("TEMU_SALES")
+df_shein = load_google_sheet("SHEIN_SALES")
+
 df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
 df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 
-# 4. 가격 추천 대상 추출
-today = pd.Timestamp.now().normalize()
-date_30 = today - pd.Timedelta(days=30)
-date_60 = today - pd.Timedelta(days=60)
+# 컬럼명 보정
+df_info.columns = [c.lower() for c in df_info.columns]
+df_temu.columns = [c.lower() for c in df_temu.columns]
+df_shein.columns = [c.lower() for c in df_shein.columns]
 
-# 스타일별 최근 30일 판매/지난 30일 판매
-temu_30 = df_temu[(df_temu["order date"] >= date_30) & (df_temu["order item status"].str.lower().isin(["shipped", "delivered"]))]
-shein_30 = df_shein[(df_shein["order date"] >= date_30) & (~df_shein["order status"].str.lower().isin(["customer refunded"]))]
-temu_60 = df_temu[(df_temu["order date"] >= date_60) & (df_temu["order date"] < date_30) & (df_temu["order item status"].str.lower().isin(["shipped", "delivered"]))]
-shein_60 = df_shein[(df_shein["order date"] >= date_60) & (df_shein["order date"] < date_30) & (~df_shein["order status"].str.lower().isin(["customer refunded"]))]
+st.title("💡 가격 제안 AI (판매 데이터 기반 추천)")
 
-def get_qty(df, style_col, qty_col):
-    return df.groupby(style_col)[qty_col].sum() if qty_col in df.columns else df.groupby(style_col).size()
+st.markdown("""
+- 최근 30일간 판매량 0 (신상/미판매 스타일)
+- 지난달 대비 판매 급감
+- 판매가 1~2건 등 극히 적음 (slow seller)
+- 너무 잘 팔리는 아이템 (가격 인상 추천)
+- 기본 가격 제시: **erp price × 1.3 + 7** (최소 erp×1.3+2, $9 미만 비추천)
+""")
 
-# 스타일별 판매량 집계
-temu_qty_30 = get_qty(temu_30, "product number", "quantity shipped")
-shein_qty_30 = get_qty(shein_30, "product description", None)
-temu_qty_60 = get_qty(temu_60, "product number", "quantity shipped")
-shein_qty_60 = get_qty(shein_60, "product description", None)
+import datetime
+today = pd.Timestamp.today().normalize()
+last_30d = today - pd.Timedelta(days=30)
+last_60d = today - pd.Timedelta(days=60)
 
-# 가격 미지정/판매 없는 스타일
-def is_na(val):
+# 유사 스타일 찾기 (SLEEVE, FIT, LENGTH 기준)
+def find_similar_price(row, ref_df):
+    ref = ref_df[
+        (ref_df["sleeve"].str.lower() == str(row.get("sleeve", "")).lower()) &
+        (ref_df["fit"].str.lower() == str(row.get("fit", "")).lower()) &
+        (ref_df["length"].str.lower() == str(row.get("length", "")).lower())
+    ]
+    return ref
+
+def suggest_price(erp, ref_prices):
+    # 기본 가격 로직
     try:
-        # 빈값 또는 0이면 판매 없는 걸로 간주 (float 변환)
-        return (pd.isna(val)) or (float(val) == 0)
+        erp = float(erp)
     except:
-        return True  # 변환 안되는 값(빈 문자열 등)은 True 처리
+        return ""
+    base = erp * 1.3 + 7
+    base_min = max(erp * 1.3 + 2, 9)
+    # AI 추천: 유사 스타일 평균/중앙값 등 (판매가 많은 스타일 기준)
+    if len(ref_prices) > 0:
+        ai_price = np.median(ref_prices)
+        if ai_price < base_min:
+            ai_price = base_min
+        return f"${ai_price:.2f} (AI/유사:{base_min:.2f}~)"
+    else:
+        return f"${base:.2f}"
 
-info_idx = df_info["product number"].astype(str)
-# 1. TEMU 데이터 가격 숫자 변환
-df_temu["base price total"] = pd.to_numeric(df_temu["base price total"], errors="coerce").fillna(0)
-df_shein["product price"] = pd.to_numeric(df_shein["product price"], errors="coerce").fillna(0)
-
-no_sale_mask = (
-    info_idx.map(
-        lambda x: is_na(df_temu[df_temu["product number"] == x]["base price total"].sum()) and
-                  is_na(df_shein[df_shein["product description"] == x]["product price"].sum())
-    )
+# 판매 없는/적은 스타일만 추출
+info = df_info.copy()
+info["erp price"] = pd.to_numeric(info["erp price"], errors="coerce")
+info["temu price"] = info["product number"].map(
+    lambda x: df_temu[df_temu["product number"]==x]["base price total"].dropna().astype(float).mean()
 )
-df_no_sale = df_info[no_sale_mask]
+info["shein price"] = info["product number"].map(
+    lambda x: df_shein[df_shein["product description"]==x]["product price"].dropna().astype(float).mean()
+)
+info["temu_qty30"] = info["product number"].map(
+    lambda x: df_temu[(df_temu["product number"]==x) & (df_temu["order date"]>=last_30d)]["quantity shipped"].sum()
+)
+info["shein_qty30"] = info["product number"].map(
+    lambda x: df_shein[(df_shein["product description"]==x) & (df_shein["order date"]>=last_30d)].shape[0]
+)
+info["total_qty30"] = info["temu_qty30"].fillna(0) + info["shein_qty30"].fillna(0)
 
+# 판매 없는 신상/미판매 스타일
+unsold = info[info["total_qty30"]==0].copy()
 
-# 판매 적은 스타일 (최근 30일 1~2개만 판매)
-def get_sale_num(x):
-    t = temu_qty_30.get(x, 0)
-    s = shein_qty_30.get(x, 0)
-    return t + s
+# 유사 스타일(AI) 평균가격 기반 추천
+rows = []
+for idx, row in unsold.iterrows():
+    ref = find_similar_price(row, info[info["total_qty30"]>0])
+    prices = []
+    if not ref.empty:
+        if not ref["temu price"].isnull().all():
+            prices += ref["temu price"].dropna().tolist()
+        if not ref["shein price"].isnull().all():
+            prices += ref["shein price"].dropna().tolist()
+    suggest = suggest_price(row["erp price"], prices)
+    rows.append({
+        "Product Number": row["product number"],
+        "SLEEVE": row.get("sleeve", ""),
+        "LENGTH": row.get("length", ""),
+        "FIT": row.get("fit", ""),
+        "ERP Price": row["erp price"],
+        "TEMU/SHEIN 판매가격": f"${row['temu price']:.2f}/{row['shein price']:.2f}" if pd.notna(row['temu price']) and pd.notna(row['shein price']) else "-",
+        "최근 30일 판매": int(row["total_qty30"]),
+        "AI 추천가": suggest,
+    })
 
-df_info["recent_30d_sale"] = df_info["product number"].map(get_sale_num)
-low_sale = df_info[(df_info["recent_30d_sale"] > 0) & (df_info["recent_30d_sale"] <= 2)]
+# 지난달 대비 급감, 판매 극저조, 너무 잘 팔림 등도 유사하게 추출 가능 (아래는 예시)
+# 예: total_qty30 <= 2 ("느리게 팔림")
+slows = info[(info["total_qty30"] > 0) & (info["total_qty30"] <= 2)].copy()
+for idx, row in slows.iterrows():
+    ref = find_similar_price(row, info[info["total_qty30"]>2])
+    prices = []
+    if not ref.empty:
+        if not ref["temu price"].isnull().all():
+            prices += ref["temu price"].dropna().tolist()
+        if not ref["shein price"].isnull().all():
+            prices += ref["shein price"].dropna().tolist()
+    suggest = suggest_price(row["erp price"], prices)
+    rows.append({
+        "Product Number": row["product number"],
+        "SLEEVE": row.get("sleeve", ""),
+        "LENGTH": row.get("length", ""),
+        "FIT": row.get("fit", ""),
+        "ERP Price": row["erp price"],
+        "TEMU/SHEIN 판매가격": f"${row['temu price']:.2f}/{row['shein price']:.2f}" if pd.notna(row['temu price']) and pd.notna(row['shein price']) else "-",
+        "최근 30일 판매": int(row["total_qty30"]),
+        "AI 추천가": suggest,
+    })
 
-# 잘 팔리는 스타일(최근 30일 10개 이상)
-well_selling = df_info[df_info["recent_30d_sale"] >= 10]
+# 너무 잘 팔리는 스타일(30일 판매량 상위 10% 중, 가격 낮은 스타일) 등 추가 가능
 
-# 지난달 대비 판매 급감(직전 30일 대비 -70% 이하)
-def get_drop(x):
-    n30 = df_info.loc[df_info["product number"] == x, "recent_30d_sale"].values[0]
-    n60 = temu_qty_60.get(x, 0) + shein_qty_60.get(x, 0)
-    if n60 == 0: return False
-    return (n30 / n60) < 0.3
+# ------------------ 표 출력 ------------------
+recommend_df = pd.DataFrame(rows)
+st.subheader("📋 가격 조정 필요 스타일 (AI 추천)")
 
-drop_list = df_info[df_info["product number"].apply(get_drop)]
-
-# --------- AI 가격 추천 페이지 UI ---------
-st.title("💡 AI 기반 가격 추천 (실험 기능)")
-
-tab1, tab2, tab3, tab4 = st.tabs([
-    "판매기록 없음", "판매 적은 스타일", "판매 급감", "베스트셀러/가격 인상 추천"
-])
-
-# 1. 판매기록 없음
-with tab1:
-    st.subheader("최근 판매 없는 스타일 – AI 가격 추천")
-    if df_no_sale.empty:
-        st.info("모든 스타일이 최소 1건 이상 판매되었습니다.")
-    else:
-        for idx, row in df_no_sale.iterrows():
-            # 유사 카테고리/핏/길이 등에서 평균 판매가/ERP 찾기
-            erp = row.get("erp price", 0)
-            target_sleeve = row.get("sleeve", "").lower()
-target_fit = row.get("fit", "").lower()
-target_length = row.get("length", "").lower()
-
-similar = df_info[
-    (df_info["sleeve"].str.lower() == target_sleeve) &
-    (df_info["fit"].str.lower() == target_fit) &
-    (df_info["length"].str.lower() == target_length)
-]
-            if similar.empty:
-                avg_price = ""
-            else:
-                avg_price = similar["erp price"].mean()
-            # AI 프롬프트 구성
-            prompt = f"""
-ERP: {erp}
-카테고리: {category}, 핏: {fit}, 길이: {length}
-비슷한 스타일 평균 ERP: {avg_price}
-이 스타일은 아직 판매 기록이 없습니다.
-ERP, 비슷한 스타일, 최소판매가(ERP*1.3+3, 최소 9불), 트렌드를 참고해 Temu/Shein 판매가를 추천하고, 간단한 이유를 1줄로 말해줘.
-"""
-            ai_rec = get_ai_price_suggestion(prompt)
-            st.markdown(f"""
-            <div style="border:1px solid #eee; border-radius:12px; padding:10px 18px; margin-bottom:14px;">
-                <b>{row['product number']} — {row.get('default product name(en)', '')}</b><br>
-                <span style="color:#999;">ERP: {erp}, CATEGORY: {category}, FIT: {fit}, LENGTH: {length}</span><br>
-                <b>추천가:</b> {ai_rec}
-            </div>
-            """, unsafe_allow_html=True)
-
-# 2. 판매적음
-with tab2:
-    st.subheader("판매 적은 스타일 – AI 가격 추천")
-    if low_sale.empty:
-        st.info("최근 30일간 판매 적은 스타일이 없습니다.")
-    else:
-        for idx, row in low_sale.iterrows():
-            erp = row.get("erp price", 0)
-            category = row.get("category", "")
-            fit = row.get("fit", "")
-            length = row.get("length", "")
-            prompt = f"""
-ERP: {erp}
-카테고리: {category}, 핏: {fit}, 길이: {length}
-최근 30일간 판매량: {row['recent_30d_sale']}
-지난달 대비 판매량: {temu_qty_60.get(row['product number'], 0) + shein_qty_60.get(row['product number'], 0)}
-ERP*1.3+3 이상, 최소 9불 이상 기준으로 Temu/Shein에 판매 추천가와 이유를 1줄로 알려줘.
-"""
-            ai_rec = get_ai_price_suggestion(prompt)
-            st.markdown(f"""
-            <div style="border:1px solid #eee; border-radius:12px; padding:10px 18px; margin-bottom:14px;">
-                <b>{row['product number']} — {row.get('default product name(en)', '')}</b><br>
-                <span style="color:#999;">ERP: {erp}, CATEGORY: {category}, FIT: {fit}, LENGTH: {length}</span><br>
-                <b>추천가:</b> {ai_rec}
-            </div>
-            """, unsafe_allow_html=True)
-
-# 3. 판매급감
-with tab3:
-    st.subheader("판매 급감 스타일 – AI 가격 추천")
-    if drop_list.empty:
-        st.info("최근 판매량이 급감한 스타일이 없습니다.")
-    else:
-        for idx, row in drop_list.iterrows():
-            erp = row.get("erp price", 0)
-            prompt = f"""
-ERP: {erp}
-최근 30일 판매: {row['recent_30d_sale']}
-이전 30일 판매: {temu_qty_60.get(row['product number'], 0) + shein_qty_60.get(row['product number'], 0)}
-판매량이 70%이상 급감했습니다. 가격을 내릴지, 유지할지 추천해줘. 근거도 1줄로.
-"""
-            ai_rec = get_ai_price_suggestion(prompt)
-            st.markdown(f"""
-            <div style="border:1px solid #eee; border-radius:12px; padding:10px 18px; margin-bottom:14px;">
-                <b>{row['product number']} — {row.get('default product name(en)', '')}</b><br>
-                <span style="color:#999;">ERP: {erp}</span><br>
-                <b>추천가:</b> {ai_rec}
-            </div>
-            """, unsafe_allow_html=True)
-
-# 4. 잘 팔리는 스타일
-with tab4:
-    st.subheader("베스트셀러 – 가격 인상 추천")
-    if well_selling.empty:
-        st.info("잘 팔리는 스타일이 없습니다.")
-    else:
-        for idx, row in well_selling.iterrows():
-            erp = row.get("erp price", 0)
-            prompt = f"""
-ERP: {erp}
-최근 30일 판매: {row['recent_30d_sale']}
-베스트셀러(10개 이상 팔림). 가격을 인상해도 괜찮을지, 추천가와 근거를 1줄로 알려줘.
-"""
-            ai_rec = get_ai_price_suggestion(prompt)
-            st.markdown(f"""
-            <div style="border:1px solid #eee; border-radius:12px; padding:10px 18px; margin-bottom:14px;">
-                <b>{row['product number']} — {row.get('default product name(en)', '')}</b><br>
-                <span style="color:#999;">ERP: {erp}</span><br>
-                <b>추천가:</b> {ai_rec}
-            </div>
-            """, unsafe_allow_html=True)
+if recommend_df.empty:
+    st.info("가격 제안이 필요한 스타일이 없습니다.")
+else:
+    st.dataframe(recommend_df, height=600, use_container_width=True)

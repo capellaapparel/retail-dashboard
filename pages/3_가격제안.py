@@ -41,6 +41,8 @@ def get_ai_price_suggestion(prompt):
     except Exception as e:
         return f"AI 추천 실패: {e}"
 
+st.write("df_info 컬럼:", df_info.columns.tolist())
+
 # 3. 데이터 불러오기
 df_info = load_google_sheet("PRODUCT_INFO")
 df_shein = load_google_sheet("SHEIN_SALES")

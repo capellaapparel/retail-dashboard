@@ -143,11 +143,15 @@ with tab1:
         for idx, row in df_no_sale.iterrows():
             # 유사 카테고리/핏/길이 등에서 평균 판매가/ERP 찾기
             erp = row.get("erp price", 0)
-            category = row.get("category", "")
-            fit = row.get("fit", "")
-            length = row.get("length", "")
-            similar = df_info[(df_info["category"] == category) & (df_info["fit"] == fit) & (df_info["length"] == length)]
-            similar = similar[similar["product number"] != row["product number"]]
+            target_sleeve = row.get("sleeve", "").lower()
+target_fit = row.get("fit", "").lower()
+target_length = row.get("length", "").lower()
+
+similar = df_info[
+    (df_info["sleeve"].str.lower() == target_sleeve) &
+    (df_info["fit"].str.lower() == target_fit) &
+    (df_info["length"].str.lower() == target_length)
+]
             if similar.empty:
                 avg_price = ""
             else:

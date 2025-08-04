@@ -68,13 +68,23 @@ def shein_qty(style, start, end):
     return len(s)
 
 def temu_avg_price(style):
-    p = df_temu[(df_temu["product number"] == style) & (df_temu["order item status"].str.lower().isin(["shipped","delivered"]))]["base price total"]
-    return safe_float(p.astype(float).mean()) if not p.empty else np.nan
+    p = df_temu[
+        (df_temu["product number"] == style) &
+        (df_temu["order item status"].str.lower().isin(["shipped", "delivered"]))
+    ]["base price total"]
+    # 문자/공백/NaN 등 포함시에도 안전하게 처리
+    p_numeric = pd.to_numeric(p, errors="coerce").dropna()
+    return safe_float(p_numeric.mean()) if not p_numeric.empty else np.nan
+
 
 def shein_avg_price(style):
-    p = df_shein[(df_shein["product description"] == style) & 
-                 (~df_shein["order status"].str.lower().isin(["customer refunded"]))]["product price"]
-    return safe_float(p.astype(float).mean()) if not p.empty else np.nan
+    p = df_shein[
+        (df_shein["product description"] == style) &
+        (~df_shein["order status"].str.lower().isin(["customer refunded"]))
+    ]["product price"]
+    p_numeric = pd.to_numeric(p, errors="coerce").dropna()
+    return safe_float(p_numeric.mean()) if not p_numeric.empty else np.nan
+
 
 def price_suggestion(erp, similar_avg=None, mode="normal"):
     erp = safe_float(erp)

@@ -47,10 +47,13 @@ def kpi_delta(now, prev):
 # ====== 데이터 불러오기 ======
 df_temu = load_google_sheet("TEMU_SALES")
 df_shein = load_google_sheet("SHEIN_SALES")
-df_info = load_google_sheet("PRODUCT_INFO")
 
 df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
 df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
+
+min_date = min(df_temu["order date"].min(), df_shein["order date"].min()).date()
+max_date = max(df_temu["order date"].max(), df_shein["order date"].max()).date()
+today = datetime.now().date()
 info_img_dict = dict(zip(df_info["product number"].astype(str), df_info["image"]))
 
 def temu_agg(df, start, end):
@@ -105,20 +108,27 @@ st.markdown("""
 st.title("세일즈 대시보드")
 
 # 오늘 날짜로 초기화
-today = datetime.now().date()
-if "sales_date_range" not in st.session_state:
-    st.session_state["sales_date_range"] = (today, today)
+if today < min_date:
+    default_date = (min_date, min_date)
+elif today > max_date:
+    default_date = (max_date, max_date)
+else:
+    default_date = (today, today)
 
-platforms = ["TEMU", "SHEIN", "BOTH"]
+if "sales_date_range" not in st.session_state:
+    st.session_state["sales_date_range"] = default_date
+
 colf1, colf2 = st.columns([2, 8])
 with colf1:
-    platform = st.radio("플랫폼 선택", platforms, horizontal=True, key="platform_radio")
+    platform = st.radio("플랫폼 선택", ["TEMU", "SHEIN", "BOTH"], horizontal=True, key="platform_radio")
 with colf2:
-    min_date = min(df_temu["order date"].min(), df_shein["order date"].min())
-    max_date = max(df_temu["order date"].max(), df_shein["order date"].max())
     date_range = st.date_input(
-        "조회 기간", st.session_state["sales_date_range"],
-        min_value=min_date, max_value=max_date, key="sales_date_input")
+        "조회 기간",
+        st.session_state["sales_date_range"],
+        min_value=min_date,
+        max_value=max_date,
+        key="sales_date_input"
+    )
     st.session_state["sales_date_range"] = date_range
 
 start = pd.to_datetime(date_range[0])

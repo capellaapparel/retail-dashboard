@@ -129,9 +129,33 @@ prev_start = start - pd.Timedelta(days=period_days)
 prev_end = end - pd.Timedelta(days=period_days)
 
 # === KPI, Best Seller ===
-if platform == "TEMU":
-    sales_sum, qty_sum, aov, cancel_qty, df_sold = temu_agg(df_temu, start, end)
-    prev_sales, prev_qty, prev_aov, prev_cancel, _ = temu_agg(df_temu, prev_start, prev_end)
+elif platform == "TEMU":
+    daily = df_sold.copy()
+    # 수치형 변환 및 이상치/음수/결측치 필터링
+    daily["quantity shipped"] = pd.to_numeric(daily["quantity shipped"], errors="coerce")
+    daily["base price total"] = pd.to_numeric(daily["base price total"], errors="coerce")
+    daily = daily[
+        (daily["quantity shipped"].notna()) & (daily["base price total"].notna())
+        & (daily["quantity shipped"] >= 0) & (daily["base price total"] >= 0)
+    ]
+    daily = daily[daily["order date"].notna()]
+
+    # 그래프 스케일 문제 방지 (이상치 컷)
+    daily["quantity shipped"] = daily["quantity shipped"].clip(upper=200)  # 최대치 지정 (적당히 조정)
+    daily["base price total"] = daily["base price total"].clip(upper=3000)  # 적당히 조정
+
+    # 그룹핑
+    daily = daily.groupby("order date").agg({
+        "quantity shipped": "sum",
+        "base price total": "sum"
+    }).reset_index().rename(columns={"quantity shipped": "qty", "base price total": "Total Sales"})
+    daily = daily.set_index("order date")
+
+    if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
+        st.line_chart(daily[["qty", "Total Sales"]])
+    else:
+        st.info("해당 기간에 데이터가 없습니다.")
+
 elif platform == "SHEIN":
     sales_sum, qty_sum, aov, cancel_qty, df_sold = shein_agg(df_shein, start, end)
     prev_sales, prev_qty, prev_aov, prev_cancel, _ = shein_agg(df_shein, prev_start, prev_end)

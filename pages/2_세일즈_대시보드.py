@@ -52,9 +52,9 @@ df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
 df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 info_img_dict = dict(zip(df_info["product number"].astype(str), df_info["image"]))
 
-min_date = min(df_temu["order date"].min(), df_shein["order date"].min()).date()
-max_date = max(df_temu["order date"].max(), df_shein["order date"].max()).date()
-today = datetime.now().date()
+min_date = min(df_temu["order date"].min(), df_shein["order date"].min())
+max_date = max(df_temu["order date"].max(), df_shein["order date"].max())
+today = datetime.datetime.now().date()
 
 # 오늘이 데이터 범위에 없으면 fallback
 if today < min_date:

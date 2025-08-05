@@ -116,7 +116,7 @@ no_sales, slow, drop, inc = [], [], [], []
 for idx, row in df_info.iterrows():
     prodnum = row["product number"]
     sim_avg = similar_style_avg(row)
-    sug = suggest_price(row, sim_avg, temu_now, shein_now, mode)
+    sug = suggest_price(row, similar_avg, temu_now, shein_now, mode)
     temu_now = row["temu_avg"]
     shein_now = row["shein_avg"]
     img = make_img_tag(row.get("image", ""))

@@ -264,18 +264,3 @@ elif platform == "SHEIN":
     best = best[["이미지", "product description", "판매수량"]]
     best.columns = ["Image", "Style Number", "Sold Qty"]
     best["Image"] = best["Image"].apply(make_img_tag)
-
-st.markdown(
-    best.to_html(escape=False, index=False, classes="best-table"),
-    unsafe_allow_html=True
-)
-else:
-best = df_sold.groupby("product number")["quantity shipped"].sum().reset_index().sort_values("quantity shipped", ascending=False).head(10)
-best["이미지"] = best["product number"].astype(str).map(info_img_dict)
-best = best[["이미지", "product number", "quantity shipped"]]
-best.columns = ["Image", "Style Number", "Sold Qty"]
-best["Image"] = best["Image"].apply(make_img_tag)
-st.markdown(
-best.to_html(escape=False, index=False, classes="best-table"),
-unsafe_allow_html=True
-)

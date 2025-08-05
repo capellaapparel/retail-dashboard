@@ -123,35 +123,23 @@ def get_qty(df, style, days):
 # --- AI 가격추천 로직 ---
 def suggest_price(row, sim_avg, temu_price, shein_price, mode):
     erp = row["erp price"]
-    base_min = erp*1.3 + 2
-    base_norm = erp*1.3 + 7
-    base_min = max(base_min, 9)
-    base_norm = max(base_norm, 9)
-    # 경쟁가(비슷한 스타일, temu, shein, sim_avg)
+    base_min = max(erp*1.3 + 2, 9)
+    base_norm = max(erp*1.3 + 7, 9)
     ref_prices = [safe_float(temu_price), safe_float(shein_price)]
     if not pd.isna(sim_avg): ref_prices.append(sim_avg)
     ref_prices = [x for x in ref_prices if not pd.isna(x) and x > 0]
-    if mode == "new":  # 신상/미판매: 너무 싸게는 말고, 동종평균/경쟁가 있으면 +조금 더
+
+    if mode in ["new", "slow", "drop"]:  # 판매 없음/저조/급감
         if ref_prices:
-            rec = max(base_min, np.mean(ref_prices))
+            rec = min(base_norm, min(ref_prices))  # "경쟁가 이하"
         else:
             rec = base_min
-    elif mode == "slow": # 1~2건밖에 없는 슬로우
+    elif mode == "hot":  # 잘 팔림
         if ref_prices:
-            rec = min(base_norm, np.mean(ref_prices))
-        else:
-            rec = base_min
-    elif mode == "drop": # 판매 급감: (최소 기준, 경쟁가와 큰 차 없도록)
-        if ref_prices:
-            rec = min(base_norm, np.mean(ref_prices))
-        else:
-            rec = base_min
-    elif mode == "hot": # 잘팔림: 경쟁가 있으면 평균, 최소가보다 1~2불 더 올려서
-        if ref_prices:
-            rec = max(base_norm, np.mean(ref_prices) + 2)
+            rec = max(base_norm, max(ref_prices) + 1)
         else:
             rec = base_norm + 1
-    else: # fallback
+    else:
         rec = base_norm
     rec = round(max(9, rec), 2)
     return rec

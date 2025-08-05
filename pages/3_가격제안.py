@@ -78,12 +78,21 @@ df_info["30d_qty"] = qty_30d
 df_info["prev30d_qty"] = qty_prev30d
 df_info["all_qty"] = qty_all
 
-def suggest_price(row, similar_avg):
+def suggest_price(row, similar_avg, temu_now, shein_now, mode="normal"):
     erp = float(row["erp price"]) if pd.notna(row["erp price"]) else 0
     min_sug = max(erp * 1.3 + 2, 9)
     base_sug = max(erp * 1.3 + 7, 9)
     avg = similar_avg if pd.notna(similar_avg) else base_sug
-    rec = np.mean([base_sug, avg])
+    # 판매급감/저조는 보수적으로 제안
+    if mode == "drop" or mode == "slow":
+        cand = [base_sug, avg]
+        if pd.notna(temu_now): cand.append(temu_now * 0.92)  # TEMU 최근가보다 8%↓
+        if pd.notna(shein_now): cand.append(shein_now * 0.92)
+        rec = min([c for c in cand if c >= min_sug])
+    elif mode == "inc":
+        rec = max(base_sug, avg) + 1.0  # 인상은 기본가+1불
+    else:
+        rec = np.mean([base_sug, avg])
     if rec < min_sug:
         rec = min_sug
     return round(rec, 2)

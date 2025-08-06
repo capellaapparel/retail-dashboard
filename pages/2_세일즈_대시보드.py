@@ -1,14 +1,13 @@
 import streamlit as st
 import pandas as pd
 from dateutil import parser
-from datetime import datetime, timedelta
+from datetime import date, timedelta
 
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name):
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
     import json
-
     GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
     scope = [
         "https://spreadsheets.google.com/feeds",
@@ -50,7 +49,6 @@ df_shein = load_google_sheet("SHEIN_SALES")
 df_info = load_google_sheet("PRODUCT_INFO")
 
 df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
-df_temu["base price total"] = pd.to_numeric(df_temu["base price total"], errors="coerce").fillna(0)
 df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 info_img_dict = dict(zip(df_info["product number"].astype(str), df_info["image"]))
 
@@ -62,6 +60,7 @@ def temu_agg(df, start, end):
     qty_sum = pd.to_numeric(df_sold["quantity shipped"], errors="coerce").fillna(0).sum()
     sales_sum = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0).sum()
     aov = sales_sum / qty_sum if qty_sum > 0 else 0
+    # Canceled는 quantity purchased로!
     cancel_qty = pd.to_numeric(df[df["order item status"].str.lower()=="canceled"]["quantity purchased"], errors="coerce").fillna(0).sum()
     return sales_sum, qty_sum, aov, cancel_qty, df_sold
 
@@ -83,7 +82,8 @@ st.markdown("""
     display:inline-block; border-radius:18px;
     background:#fff; box-shadow:0 2px 10px #EAEAEA;
     padding:19px 32px 16px 30px;
-    width: 24.5%; min-width:220px; max-width:350px;
+    width: 24.5%;        /* ← ★ 4등분 정확히 맞춤 */
+    min-width:220px; max-width:350px;
     text-align:left; vertical-align:top; transition:box-shadow .2s;
     margin: 0 0.5% 0 0;
 }
@@ -104,38 +104,34 @@ st.markdown("""
 
 st.title("세일즈 대시보드")
 
-platforms = ["TEMU", "SHEIN", "BOTH"]
-
-# ----------- 최신 날짜 자동 세팅 -----------
+# ---- 조회기간 기본: 최근 7일(오늘까지) ----
 min_dt = min(df_temu["order date"].min(), df_shein["order date"].min())
 max_dt = max(df_temu["order date"].max(), df_shein["order date"].max())
-today = pd.Timestamp.today().normalize()
-
-# 최근 7일을 기본으로 잡기 (혹은 데이터 마지막 날짜 기준)
-base_end = max(today, max_dt)
-base_start = base_end - pd.Timedelta(days=6)
-default_range = (base_start.date(), base_end.date())
-
+today = date.today()
+default_end = min(today, max_dt.date()) if pd.notnull(max_dt) else today
+default_start = default_end - timedelta(days=6)
 if "sales_date_range" not in st.session_state:
-    st.session_state["sales_date_range"] = default_range
+    st.session_state["sales_date_range"] = (default_start, default_end)
+
+# Streamlit date_input은 date 타입 필수
+curr = st.session_state["sales_date_range"]
+if not (isinstance(curr[0], date) and isinstance(curr[1], date)):
+    curr = (pd.to_datetime(curr[0]).date(), pd.to_datetime(curr[1]).date())
+
+if curr[0] > curr[1]:
+    curr = (curr[1], curr[0])
+if curr[0] < min_dt.date() or curr[1] > max_dt.date():
+    curr = (default_start, default_end)
 
 colf1, colf2 = st.columns([2, 8])
 with colf1:
-    platform = st.radio("플랫폼 선택", platforms, horizontal=True, key="platform_radio")
+    platform = st.radio("플랫폼 선택", ["TEMU", "SHEIN", "BOTH"], horizontal=True, key="platform_radio")
 with colf2:
     date_range = st.date_input(
-        "조회 기간",
-        st.session_state["sales_date_range"],
-        min_value=min_dt.date(),
-        max_value=max_dt.date(),
-        key="sales_date_input"
+        "조회 기간", curr,
+        min_value=min_dt.date(), max_value=max_dt.date(), key="sales_date_input"
     )
-    # 유효성 검사 (기간 역전, 범위 밖 등)
-    if isinstance(date_range, tuple) and len(date_range) == 2:
-        st.session_state["sales_date_range"] = date_range
-    else:
-        st.session_state["sales_date_range"] = default_range
-        date_range = default_range
+    st.session_state["sales_date_range"] = date_range
 
 start = pd.to_datetime(date_range[0])
 end = pd.to_datetime(date_range[1]) + pd.Timedelta(hours=23, minutes=59, seconds=59)
@@ -182,27 +178,24 @@ try:
         daily["qty"] = 1
         daily = daily.groupby("order date").agg({"Total Sales":"sum", "qty":"sum"}).reset_index()
         daily = daily.set_index("order date")
-        if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
-            st.line_chart(daily[["qty", "Total Sales"]])
+        if not daily.empty and "Total Sales" in daily.columns and "qty" in daily.columns:
+            st.line_chart(daily[["Total Sales", "qty"]])
         else:
             st.info("해당 기간에 데이터가 없습니다.")
     elif platform == "TEMU":
-        # 반드시 금액 float 보장
-        df_sold["base price total"] = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0)
         daily = df_sold.groupby("order date").agg({
-            "quantity shipped": "sum",
-            "base price total": "sum"
-        }).reset_index().rename(columns={"quantity shipped":"qty", "base price total":"Total Sales"})
+            "base price total": "sum",
+            "quantity shipped": "sum"
+        }).reset_index().rename(columns={"base price total": "Total Sales", "quantity shipped": "qty"})
         daily = daily.set_index("order date")
-        if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
-            st.line_chart(daily[["qty", "Total Sales"]])
+        if not daily.empty and "Total Sales" in daily.columns and "qty" in daily.columns:
+            st.line_chart(daily[["Total Sales", "qty"]])
         else:
             st.info("해당 기간에 데이터가 없습니다.")
     else:
         # BOTH (qty: temu qty + shein qty, sales: temu+shein)
         temu_daily = df_temu[(df_temu["order date"] >= start) & (df_temu["order date"] <= end)]
         temu_daily = temu_daily[temu_daily["order item status"].str.lower().isin(["shipped", "delivered"])]
-        temu_daily["base price total"] = pd.to_numeric(temu_daily["base price total"], errors="coerce").fillna(0)
         temu_group = temu_daily.groupby("order date").agg({"quantity shipped":"sum", "base price total":"sum"})
         shein_daily = df_shein[(df_shein["order date"] >= start) & (df_shein["order date"] <= end)]
         shein_daily = shein_daily[~shein_daily["order status"].str.lower().isin(["customer refunded"])]
@@ -213,8 +206,8 @@ try:
             "qty": temu_group["quantity shipped"].fillna(0).add(shein_group["qty"].fillna(0), fill_value=0),
             "Total Sales": temu_group["base price total"].fillna(0).add(shein_group["product price"].fillna(0), fill_value=0)
         })
-        if not both_daily.empty and "qty" in both_daily.columns and "Total Sales" in both_daily.columns:
-            st.line_chart(both_daily[["qty", "Total Sales"]])
+        if not both_daily.empty and "Total Sales" in both_daily.columns and "qty" in both_daily.columns:
+            st.line_chart(both_daily[["Total Sales", "qty"]])
         else:
             st.info("해당 기간에 데이터가 없습니다.")
 except Exception as e:
@@ -222,7 +215,6 @@ except Exception as e:
 
 # --- 베스트셀러 TOP 10: 사진, 스타일넘버, 판매량 ---
 st.subheader("Best Seller 10")
-
 def make_img_tag(url):
     if pd.notna(url) and str(url).startswith("http"):
         return f"<img src='{url}' style='width:60px;height:auto;'>"

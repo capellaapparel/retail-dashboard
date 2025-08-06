@@ -122,13 +122,25 @@ with colf1:
     platform = st.radio("플랫폼 선택", platforms, horizontal=True, key="platform_radio")
 with colf2:
     min_date = min(df_temu["order date"].min(), df_shein["order date"].min())
-    max_date = max(df_temu["order date"].max(), df_shein["order date"].max())
-    date_range = st.date_input(
-        "조회 기간",
-        st.session_state["sales_date_range"],
-        min_value=min_date, max_value=max_date, key="sales_date_input"
-    )
-    st.session_state["sales_date_range"] = date_range
+max_date = max(df_temu["order date"].max(), df_shein["order date"].max())
+today = pd.to_datetime("today").normalize()
+
+# 기본값 (max_date와 비교해 7일 전~max_date, 단 min_date보다 빠르면 min_date)
+default_end = max_date if pd.notna(max_date) else today
+default_start = max(default_end - pd.Timedelta(days=6), min_date)
+
+# 세션에 값이 없거나, min/max를 벗어나면 새로 셋팅
+prev_range = st.session_state.get("sales_date_range", (default_start, default_end))
+prev_start, prev_end = pd.to_datetime(prev_range[0]), pd.to_datetime(prev_range[1])
+if prev_start < min_date or prev_end > max_date:
+    st.session_state["sales_date_range"] = (default_start, default_end)
+
+date_range = st.date_input(
+    "조회 기간",
+    st.session_state["sales_date_range"],
+    min_value=min_date, max_value=max_date, key="sales_date_input"
+)
+st.session_state["sales_date_range"] = date_range
 
 # 날짜 range: 00:00~23:59까지 포함
 if isinstance(date_range, tuple) or isinstance(date_range, list):

@@ -197,7 +197,7 @@ try:
             st.line_chart(daily[["qty", "Total Sales"]])
         else:
             st.info("해당 기간에 데이터가 없습니다.")
-    if platform == "TEMU":
+    elif platform == "TEMU":
     # 집계 전에 float 변환!
     df_sold["base price total"] = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0)
     daily = df_sold.groupby("order date").agg({

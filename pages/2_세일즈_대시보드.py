@@ -197,19 +197,18 @@ try:
             st.line_chart(daily[["qty", "Total Sales"]])
         else:
             st.info("해당 기간에 데이터가 없습니다.")
-    elif platform == "TEMU":
-        # 숫자 변환 보장
-        df_sold["quantity shipped"] = pd.to_numeric(df_sold["quantity shipped"], errors="coerce").fillna(0)
-        df_sold["base price total"] = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0)
-        daily = df_sold.groupby("order date").agg({
-            "quantity shipped": "sum",
-            "base price total": "sum"
-        }).reset_index().rename(columns={"quantity shipped":"qty", "base price total":"Total Sales"})
-        daily = daily.set_index("order date")
-        if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
-            st.line_chart(daily[["qty", "Total Sales"]])
-        else:
-            st.info("해당 기간에 데이터가 없습니다.")
+    if platform == "TEMU":
+    # 집계 전에 float 변환!
+    df_sold["base price total"] = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0)
+    daily = df_sold.groupby("order date").agg({
+        "quantity shipped": "sum",
+        "base price total": "sum"
+    }).reset_index().rename(columns={"quantity shipped":"qty", "base price total":"Total Sales"})
+    daily = daily.set_index("order date")
+    if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
+        st.line_chart(daily[["qty", "Total Sales"]])
+    else:
+        st.info("해당 기간에 데이터가 없습니다.")
     else:
         temu_daily = df_temu[(df_temu["order date"] >= start) & (df_temu["order date"] <= end)]
         temu_daily = temu_daily[temu_daily["order item status"].str.lower().isin(["shipped", "delivered"])]

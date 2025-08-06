@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from dateutil import parser
-import datetime
+from datetime import datetime, timedelta
 
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name):
@@ -50,6 +50,7 @@ df_shein = load_google_sheet("SHEIN_SALES")
 df_info = load_google_sheet("PRODUCT_INFO")
 
 df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
+df_temu["base price total"] = pd.to_numeric(df_temu["base price total"], errors="coerce").fillna(0)
 df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 info_img_dict = dict(zip(df_info["product number"].astype(str), df_info["image"]))
 
@@ -57,12 +58,9 @@ def temu_agg(df, start, end):
     mask = (df["order date"] >= start) & (df["order date"] <= end)
     df = df[mask].copy()
     sold_mask = df["order item status"].str.lower().isin(["shipped", "delivered"])
-    df_sold = df[sold_mask].copy()
-    # 숫자 강제 변환!
-    df_sold["quantity shipped"] = pd.to_numeric(df_sold["quantity shipped"], errors="coerce").fillna(0)
-    df_sold["base price total"] = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0)
-    qty_sum = df_sold["quantity shipped"].sum()
-    sales_sum = df_sold["base price total"].sum()
+    df_sold = df[sold_mask]
+    qty_sum = pd.to_numeric(df_sold["quantity shipped"], errors="coerce").fillna(0).sum()
+    sales_sum = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0).sum()
     aov = sales_sum / qty_sum if qty_sum > 0 else 0
     cancel_qty = pd.to_numeric(df[df["order item status"].str.lower()=="canceled"]["quantity purchased"], errors="coerce").fillna(0).sum()
     return sales_sum, qty_sum, aov, cancel_qty, df_sold
@@ -85,8 +83,7 @@ st.markdown("""
     display:inline-block; border-radius:18px;
     background:#fff; box-shadow:0 2px 10px #EAEAEA;
     padding:19px 32px 16px 30px;
-    width: 24.5%;
-    min-width:220px; max-width:350px;
+    width: 24.5%; min-width:220px; max-width:350px;
     text-align:left; vertical-align:top; transition:box-shadow .2s;
     margin: 0 0.5% 0 0;
 }
@@ -109,47 +106,39 @@ st.title("세일즈 대시보드")
 
 platforms = ["TEMU", "SHEIN", "BOTH"]
 
-# === 오늘 기준 최근 7일로 기본 설정 ===
-today = pd.to_datetime("today").normalize()
-default_start = today - pd.Timedelta(days=6)
-default_end = today
+# ----------- 최신 날짜 자동 세팅 -----------
+min_dt = min(df_temu["order date"].min(), df_shein["order date"].min())
+max_dt = max(df_temu["order date"].max(), df_shein["order date"].max())
+today = pd.Timestamp.today().normalize()
+
+# 최근 7일을 기본으로 잡기 (혹은 데이터 마지막 날짜 기준)
+base_end = max(today, max_dt)
+base_start = base_end - pd.Timedelta(days=6)
+default_range = (base_start.date(), base_end.date())
 
 if "sales_date_range" not in st.session_state:
-    st.session_state["sales_date_range"] = (default_start, default_end)
+    st.session_state["sales_date_range"] = default_range
 
 colf1, colf2 = st.columns([2, 8])
 with colf1:
     platform = st.radio("플랫폼 선택", platforms, horizontal=True, key="platform_radio")
 with colf2:
-    min_date = min(df_temu["order date"].min(), df_shein["order date"].min())
-max_date = max(df_temu["order date"].max(), df_shein["order date"].max())
-today = pd.to_datetime("today").normalize()
+    date_range = st.date_input(
+        "조회 기간",
+        st.session_state["sales_date_range"],
+        min_value=min_dt.date(),
+        max_value=max_dt.date(),
+        key="sales_date_input"
+    )
+    # 유효성 검사 (기간 역전, 범위 밖 등)
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        st.session_state["sales_date_range"] = date_range
+    else:
+        st.session_state["sales_date_range"] = default_range
+        date_range = default_range
 
-# 기본값 (max_date와 비교해 7일 전~max_date, 단 min_date보다 빠르면 min_date)
-default_end = max_date if pd.notna(max_date) else today
-default_start = max(default_end - pd.Timedelta(days=6), min_date)
-
-# 세션에 값이 없거나, min/max를 벗어나면 새로 셋팅
-prev_range = st.session_state.get("sales_date_range", (default_start, default_end))
-prev_start, prev_end = pd.to_datetime(prev_range[0]), pd.to_datetime(prev_range[1])
-if prev_start < min_date or prev_end > max_date:
-    st.session_state["sales_date_range"] = (default_start, default_end)
-
-date_range = st.date_input(
-    "조회 기간",
-    st.session_state["sales_date_range"],
-    min_value=min_date, max_value=max_date, key="sales_date_input"
-)
-st.session_state["sales_date_range"] = date_range
-
-# 날짜 range: 00:00~23:59까지 포함
-if isinstance(date_range, tuple) or isinstance(date_range, list):
-    start = pd.to_datetime(date_range[0])
-    end = pd.to_datetime(date_range[1]) + pd.Timedelta(hours=23, minutes=59, seconds=59)
-else:
-    start = pd.to_datetime(date_range)
-    end = start + pd.Timedelta(hours=23, minutes=59, seconds=59)
-
+start = pd.to_datetime(date_range[0])
+end = pd.to_datetime(date_range[1]) + pd.Timedelta(hours=23, minutes=59, seconds=59)
 period_days = (end - start).days + 1
 prev_start = start - pd.Timedelta(days=period_days)
 prev_end = end - pd.Timedelta(days=period_days)
@@ -198,21 +187,21 @@ try:
         else:
             st.info("해당 기간에 데이터가 없습니다.")
     elif platform == "TEMU":
-    # 집계 전에 float 변환!
-    df_sold["base price total"] = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0)
-    daily = df_sold.groupby("order date").agg({
-        "quantity shipped": "sum",
-        "base price total": "sum"
-    }).reset_index().rename(columns={"quantity shipped":"qty", "base price total":"Total Sales"})
-    daily = daily.set_index("order date")
-    if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
-        st.line_chart(daily[["qty", "Total Sales"]])
+        # 반드시 금액 float 보장
+        df_sold["base price total"] = pd.to_numeric(df_sold["base price total"], errors="coerce").fillna(0)
+        daily = df_sold.groupby("order date").agg({
+            "quantity shipped": "sum",
+            "base price total": "sum"
+        }).reset_index().rename(columns={"quantity shipped":"qty", "base price total":"Total Sales"})
+        daily = daily.set_index("order date")
+        if not daily.empty and "qty" in daily.columns and "Total Sales" in daily.columns:
+            st.line_chart(daily[["qty", "Total Sales"]])
+        else:
+            st.info("해당 기간에 데이터가 없습니다.")
     else:
-        st.info("해당 기간에 데이터가 없습니다.")
-    else:
+        # BOTH (qty: temu qty + shein qty, sales: temu+shein)
         temu_daily = df_temu[(df_temu["order date"] >= start) & (df_temu["order date"] <= end)]
         temu_daily = temu_daily[temu_daily["order item status"].str.lower().isin(["shipped", "delivered"])]
-        temu_daily["quantity shipped"] = pd.to_numeric(temu_daily["quantity shipped"], errors="coerce").fillna(0)
         temu_daily["base price total"] = pd.to_numeric(temu_daily["base price total"], errors="coerce").fillna(0)
         temu_group = temu_daily.groupby("order date").agg({"quantity shipped":"sum", "base price total":"sum"})
         shein_daily = df_shein[(df_shein["order date"] >= start) & (df_shein["order date"] <= end)]
@@ -229,7 +218,7 @@ try:
         else:
             st.info("해당 기간에 데이터가 없습니다.")
 except Exception as e:
-    st.info("해당 기간에 데이터가 없습니다.")
+    st.warning("그래프를 표시할 수 없습니다. 기간 내 데이터가 없거나 잘못된 데이터가 포함되어 있습니다.")
 
 # --- 베스트셀러 TOP 10: 사진, 스타일넘버, 판매량 ---
 st.subheader("Best Seller 10")

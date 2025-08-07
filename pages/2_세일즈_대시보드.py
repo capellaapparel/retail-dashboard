@@ -76,6 +76,8 @@ def shein_agg(df, start, end):
     return sales_sum, qty_sum, aov, cancel_qty, df_sold
 
 st.title("세일즈 대시보드")
+recent = df_temu.sort_values("purchase date", ascending=False).head(20)
+st.write(recent[["purchase date", "base price total", "order item status", "quantity shipped"]])
 
 platforms = ["TEMU", "SHEIN", "BOTH"]
 today = pd.Timestamp.today().normalize()

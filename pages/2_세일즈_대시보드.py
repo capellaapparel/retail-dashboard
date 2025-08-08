@@ -4,7 +4,9 @@ import pandas as pd
 import re
 from dateutil import parser
 
-# ========== PAGE & CSS ==========
+# =========================
+# Page & CSS
+# =========================
 st.set_page_config(page_title="세일즈 대시보드", layout="wide")
 st.title("세일즈 대시보드")
 
@@ -22,12 +24,12 @@ st.markdown("""
 .insight-list li { margin:4px 0; line-height:1.45; }
 img.thumb { width:60px; height:auto; border-radius:10px; }
 .block-title { margin:18px 0 8px 0; font-weight:700; font-size:1.05rem; }
-.quick-range { margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; }
-.quick-range button { padding:6px 10px; border:1px solid #e3e3ea; border-radius:8px; background:#fafafa; }
 </style>
 """, unsafe_allow_html=True)
 
-# ========== HELPERS ==========
+# =========================
+# Helpers
+# =========================
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name: str) -> pd.DataFrame:
     import gspread
@@ -73,6 +75,7 @@ def kpi_delta_html(cur, prev):
 
 # 스타일 추출 & 이미지 매핑
 STYLE_RE = re.compile(r"\b([A-Z]{1,3}\d{3,5}[A-Z0-9]?)\b")
+
 def build_img_map(df_info: pd.DataFrame):
     keys = df_info["product number"].astype(str).str.upper().str.replace(" ", "", regex=False)
     return dict(zip(keys, df_info["image"]))
@@ -92,13 +95,15 @@ def style_key_from_label(label: str, img_map: dict) -> str | None:
 
 def img_tag(url): return f"<img src='{url}' class='thumb'>" if str(url).startswith("http") else ""
 
-# ========== LOAD ==========
+# =========================
+# 1) Load data FIRST
+# =========================
 df_temu  = load_google_sheet("TEMU_SALES")
 df_shein = load_google_sheet("SHEIN_SALES")
 df_info  = load_google_sheet("PRODUCT_INFO")
 IMG_MAP = build_img_map(df_info)
 
-# dates & normalize
+# Normalize dates / columns
 df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
 df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 
@@ -110,15 +115,15 @@ df_temu["base price total"] = clean_money(df_temu["base price total"])
 df_shein["order status"] = df_shein["order status"].astype(str)
 df_shein["product price"] = clean_money(df_shein["product price"])
 
-# ---------- Controls (safe clamp + presets) ----------
+# =========================
+# 2) Controls (platform + date with presets)
+# =========================
 min_dt, max_dt = _safe_minmax(df_temu["order date"], df_shein["order date"])
 today_ts = pd.Timestamp.today().normalize()
 today_d  = today_ts.date()
 
-def _clamp_date(d):  # 모든 날짜는 min/max 사이로
-    return max(min_dt, min(d, max_dt))
+def _clamp_date(d): return max(min_dt, min(d, max_dt))
 
-# 초기 기본값
 default_start = _clamp_date((today_ts - pd.Timedelta(days=6)).date())
 default_end   = _clamp_date(today_d)
 
@@ -144,19 +149,16 @@ def _apply_quick_range():
         s = last_end.replace(day=1).date(); e = last_end.date()
     else:
         return
-    # ✅ 클램프 + 정렬 후 상태 업데이트
     s = _clamp_date(s); e = _clamp_date(e)
     if e < s: e = s
     st.session_state["sales_date_range"] = (s, e)
     st.session_state["sales_date_input"] = (s, e)
 
 with c2:
-    # 세션 상태를 먼저 안전하게 정제
     s_val, e_val = st.session_state["sales_date_range"]
     s_val = _clamp_date(s_val); e_val = _clamp_date(e_val)
     if e_val < s_val: e_val = s_val
 
-    # ✅ 항상 범위 내 값만 date_input에 전달
     dr = st.date_input(
         "조회 기간",
         value=(s_val, e_val),
@@ -164,19 +166,16 @@ with c2:
         max_value=max_dt,
         key="sales_date_input"
     )
-
-    # 사용자가 고른 값 반영 (형/범위 정리)
     if isinstance(dr, (list, tuple)) and len(dr) == 2:
         s, e = dr
     else:
         s = e = dr
-    # pandas.Timestamp로 넘어온 경우 대비
     s = pd.to_datetime(s).date(); e = pd.to_datetime(e).date()
     s = _clamp_date(s); e = _clamp_date(e)
     if e < s: e = s
     st.session_state["sales_date_range"] = (s, e)
 
-    # 날짜 아래 프리셋 (rerun 필요 없음)
+    # 날짜 아래 프리셋
     try:
         st.segmented_control(
             "",
@@ -193,7 +192,16 @@ with c2:
             on_change=_apply_quick_range,
         )
 
-# ========== AGG ==========
+# 최종 시간 범위
+start = pd.to_datetime(st.session_state["sales_date_range"][0])
+end   = pd.to_datetime(st.session_state["sales_date_range"][1]) + pd.Timedelta(hours=23, minutes=59, seconds=59)
+period_days = (end - start).days + 1
+prev_start  = start - pd.Timedelta(days=period_days)
+prev_end    = start - pd.Timedelta(seconds=1)
+
+# =========================
+# 3) Aggregations
+# =========================
 def temu_agg(df, s, e):
     d = df[(df["order date"] >= s) & (df["order date"] <= e)].copy()
     stt = d["order item status"].str.lower()
@@ -214,23 +222,55 @@ def shein_agg(df, s, e):
     cancel_qty = stt.eq("customer refunded").sum()
     return sales_sum, qty_sum, aov, cancel_qty, sold
 
-def get_bestseller_list(platform, df_sold, s, e):
+def build_daily(platform: str, s: pd.Timestamp, e: pd.Timestamp) -> pd.DataFrame:
+    if platform == "TEMU":
+        t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
+        t = t[t["order item status"].str.lower().isin(["shipped","delivered"])]
+        daily = t.groupby(pd.Grouper(key="order date", freq="D")).agg(
+            qty=("quantity shipped","sum"), Total_Sales=("base price total","sum")
+        )
+    elif platform == "SHEIN":
+        s2 = df_shein[(df_shein["order date"]>=s)&(df_shein["order date"]<=e)]
+        s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])]
+        s2["qty"] = 1
+        daily = s2.groupby(pd.Grouper(key="order date", freq="D")).agg(
+            qty=("qty","sum"), Total_Sales=("product price","sum")
+        )
+    else:
+        t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
+        t = t[t["order item status"].str.lower().isin(["shipped","delivered"])].copy()
+        s2 = df_shein[(df_shein["order date"]>=s)&(df_shein["order date"]<=e)]
+        s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])].copy()
+        s2["qty"] = 1
+        t_daily = t.groupby(pd.Grouper(key="order date", freq="D")).agg(
+            t_qty=("quantity shipped","sum"), t_sales=("base price total","sum")
+        )
+        s_daily = s2.groupby(pd.Grouper(key="order date", freq="D")).agg(
+            s_qty=("qty","sum"), s_sales=("product price","sum")
+        )
+        daily = pd.concat([t_daily, s_daily], axis=1).fillna(0.0)
+        daily["qty"] = daily["t_qty"] + daily["s_qty"]
+        daily["Total_Sales"] = daily["t_sales"] + daily["s_sales"]
+        daily = daily[["qty","Total_Sales"]]
+    return daily.reset_index().set_index("order date").fillna(0.0)
+
+def get_bestseller_labels(platform, df_sold, s, e):
     if platform == "TEMU":
         best = df_sold.groupby("product number")["quantity shipped"].sum().sort_values(ascending=False).head(10)
-        labels = best.index.astype(str)
+        return list(best.index.astype(str)), best
     elif platform == "SHEIN":
         tmp = df_sold.copy(); tmp["qty"] = 1
         best = tmp.groupby("product description")["qty"].sum().sort_values(ascending=False).head(10)
-        labels = best.index.astype(str)
+        return list(best.index.astype(str)), best
     else:
-        # BOTH은 style_key 기준으로 합산
-        t = df_temu[(df_temu["order date"] >= s) & (df_temu["order date"] <= e)]
+        # 스타일키 기준
+        t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
         t = t[t["order item status"].str.lower().isin(["shipped","delivered"])].copy()
         t["style_key"] = t["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
         t = t.dropna(subset=["style_key"])
         t_cnt = t.groupby("style_key")["quantity shipped"].sum().astype(int)
 
-        s2 = df_shein[(df_shein["order date"] >= s) & (df_shein["order date"] <= e)]
+        s2 = df_shein[(df_shein["order date"]>=s)&(df_shein["order date"]<=e)]
         s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])].copy()
         s2["style_key"] = s2["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
         s2 = s2.dropna(subset=["style_key"])
@@ -239,10 +279,11 @@ def get_bestseller_list(platform, df_sold, s, e):
         mix = pd.DataFrame({"TEMU Qty": t_cnt, "SHEIN Qty": s_cnt}).fillna(0).astype(int)
         mix["Sold Qty"] = (mix["TEMU Qty"] + mix["SHEIN Qty"]).astype(int)
         best = mix["Sold Qty"].sort_values(ascending=False).head(10)
-        labels = best.index.astype(str)
-    return list(labels), best
+        return list(best.index.astype(str)), best
 
-# current vs prev
+# =========================
+# 4) Current & previous metrics
+# =========================
 if platform == "TEMU":
     sales_sum, qty_sum, aov, cancel_qty, df_sold = temu_agg(df_temu, start, end)
     psales, pqty, paov, pcancel, p_sold = temu_agg(df_temu, prev_start, prev_end)
@@ -262,7 +303,9 @@ else:
     paov = psales / pqty if pqty > 0 else 0.0
     p_sold = pd.concat([d1p, d2p], ignore_index=True)
 
-# ========== KPI CARD ==========
+# =========================
+# 5) KPI Card
+# =========================
 st.markdown(f"""
 <div class='cap-card'>
   <div class='kpi-grid'>
@@ -290,7 +333,9 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ========== INSIGHT CARD ==========
+# =========================
+# 6) Insights Card
+# =========================
 def pct_change(cur, prev):
     if prev in (0, None) or pd.isna(prev): return None
     return (cur - prev) / prev * 100.0
@@ -298,8 +343,8 @@ def pct_change(cur, prev):
 def build_insights():
     bullets = []
     ac = pct_change(aov, paov)
-    cur_top, _ = get_bestseller_list(platform, df_sold, start, end)
-    prev_top, _ = get_bestseller_list(platform, p_sold, prev_start, prev_end)
+    cur_top, _ = get_bestseller_labels(platform, df_sold, start, end)
+    prev_top, _ = get_bestseller_labels(platform, p_sold, prev_start, prev_end)
     entered = [x for x in cur_top if x not in prev_top]
     dropped = [x for x in prev_top if x not in cur_top]
     if ac is not None and abs(ac) >= 5:
@@ -321,60 +366,20 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ========== DAILY CHART (robust) ==========
-# ======= Daily Chart (safe & clean) =======
+# =========================
+# 7) Daily Chart
+# =========================
 st.markdown("<div class='block-title'>일별 판매 추이</div>", unsafe_allow_html=True)
-
-def build_daily(platform: str, s: pd.Timestamp, e: pd.Timestamp) -> pd.DataFrame:
-    if platform == "TEMU":
-        t = df_temu[(df_temu["order date"] >= s) & (df_temu["order date"] <= e)]
-        t = t[t["order item status"].str.lower().isin(["shipped", "delivered"])]
-        daily = t.groupby(pd.Grouper(key="order date", freq="D")).agg(
-            qty=("quantity shipped", "sum"),
-            Total_Sales=("base price total", "sum"),
-        )
-
-    elif platform == "SHEIN":
-        s2 = df_shein[(df_shein["order date"] >= s) & (df_shein["order date"] <= e)]
-        s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])]
-        s2["qty"] = 1
-        daily = s2.groupby(pd.Grouper(key="order date", freq="D")).agg(
-            qty=("qty", "sum"),
-            Total_Sales=("product price", "sum"),
-        )
-
-    else:  # BOTH
-        t = df_temu[(df_temu["order date"] >= s) & (df_temu["order date"] <= e)]
-        t = t[t["order item status"].str.lower().isin(["shipped", "delivered"])].copy()
-        s2 = df_shein[(df_shein["order date"] >= s) & (df_shein["order date"] <= e)]
-        s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])].copy()
-        s2["qty"] = 1
-
-        t_daily = t.groupby(pd.Grouper(key="order date", freq="D")).agg(
-            t_qty=("quantity shipped", "sum"),
-            t_sales=("base price total", "sum"),
-        )
-        s_daily = s2.groupby(pd.Grouper(key="order date", freq="D")).agg(
-            s_qty=("qty", "sum"),
-            s_sales=("product price", "sum"),
-        )
-
-        daily = pd.concat([t_daily, s_daily], axis=1).fillna(0.0)
-        daily["qty"] = daily["t_qty"] + daily["s_qty"]
-        daily["Total_Sales"] = daily["t_sales"] + daily["s_sales"]
-        daily = daily[["qty", "Total_Sales"]]
-
-    return daily.reset_index().set_index("order date").fillna(0.0)
-
-# 실제 렌더
-chart_box = st.empty()
 daily = build_daily(platform, start, end)
+chart_box = st.empty()
 if daily.empty:
     chart_box.info("해당 기간에 데이터가 없습니다.")
 else:
-    _ = chart_box.line_chart(daily[["Total_Sales", "qty"]])  # 반환값 버리기
+    _ = chart_box.line_chart(daily[["Total_Sales","qty"]])  # 반환값 버려 부작용 방지
 
-# ========== BEST SELLER (공통 style_key 기준, 정수 & 이미지 안정) ==========
+# =========================
+# 8) Best Seller
+# =========================
 st.markdown("<div class='block-title'>Best Seller 10</div>", unsafe_allow_html=True)
 
 def best_table(platform, df_sold, s, e):
@@ -397,7 +402,7 @@ def best_table(platform, df_sold, s, e):
         g["Image"] = g["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
         return g[["Image","Style Number","Sold Qty"]].sort_values("Sold Qty", ascending=False).head(10)
 
-    # BOTH: 공통 style_key 기준 합산 + 안전 리네임
+    # BOTH
     t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)&
                 (df_temu["order item status"].str.lower().isin(["shipped","delivered"]))].copy()
     t["style_key"] = t["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
@@ -412,11 +417,9 @@ def best_table(platform, df_sold, s, e):
 
     mix = pd.DataFrame({"TEMU Qty": t_group, "SHEIN Qty": s_group}).fillna(0).astype(int)
     mix["Sold Qty"] = (mix["TEMU Qty"] + mix["SHEIN Qty"]).astype(int)
-
-    # 정렬 후 인덱스 리셋
     mix = mix.sort_values("Sold Qty", ascending=False).head(10).reset_index()
 
-    # ✅ 어떤 이름으로 있든 무조건 Style Number 컬럼을 보장
+    # 안전 리네임 (환경에 따라 index / style_key로 올 수 있음)
     if "index" in mix.columns:
         mix = mix.rename(columns={"index": "Style Number"})
     elif "style_key" in mix.columns:
@@ -426,6 +429,7 @@ def best_table(platform, df_sold, s, e):
 
     mix["Image"] = mix["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
     return mix[["Image","Style Number","Sold Qty","TEMU Qty","SHEIN Qty"]]
+
 best_df = best_table(platform, df_sold, start, end)
 st.markdown("<div class='cap-card'>", unsafe_allow_html=True)
 st.markdown(best_df.to_html(escape=False, index=False), unsafe_allow_html=True)

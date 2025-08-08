@@ -111,8 +111,10 @@ df_shein["order status"] = df_shein["order status"].astype(str)
 df_shein["product price"] = clean_money(df_shein["product price"])
 
 # ========== CONTROLS ==========
+# ---------- Controls (platform + date + quick presets) ----------
 min_dt, max_dt = _safe_minmax(df_temu["order date"], df_shein["order date"])
-today_ts = pd.Timestamp.today().normalize(); today_d = today_ts.date()
+today_ts = pd.Timestamp.today().normalize()
+today_d  = today_ts.date()
 default_start = max(min_dt, (today_ts - pd.Timedelta(days=6)).date())
 default_end   = min(max_dt, today_d)
 
@@ -122,40 +124,64 @@ if "sales_date_range" not in st.session_state:
 c1, c2 = st.columns([1.2, 8.8])
 with c1:
     platform = st.radio("플랫폼 선택", ["TEMU", "SHEIN", "BOTH"], horizontal=True)
-with c2:
-    v_start, v_end = st.session_state["sales_date_range"]
-    v_start = max(min_dt, min(v_start, max_dt)); v_end = max(v_start, min(v_end, max_dt))
-    dr = st.date_input("조회 기간", value=(v_start, v_end), min_value=min_dt, max_value=max_dt, key="sales_date_input")
-    if isinstance(dr, (list, tuple)) and len(dr) == 2: start_date, end_date = dr
-    else: start_date = end_date = dr
-    start_date = max(min_dt, min(start_date, max_dt)); end_date = max(start_date, min(end_date, max_dt))
 
-    # 빠른 기간 버튼
-    b1, b2, b3, b4 = st.columns(4)
-    if b1.button("최근 1주"):
-        st.session_state["sales_date_range"] = ((today_ts - pd.Timedelta(days=6)).date(), today_d)
-        st.experimental_rerun()
-    if b2.button("최근 1개월"):
-        st.session_state["sales_date_range"] = ((today_ts - pd.Timedelta(days=29)).date(), today_d)
-        st.experimental_rerun()
-    if b3.button("이번 달"):
-        first = today_ts.replace(day=1).date()
-        st.session_state["sales_date_range"] = (first, today_d)
-        st.experimental_rerun()
-    if b4.button("지난 달"):
+def _apply_quick_range():
+    label = st.session_state.get("quick_range")
+    if not label:
+        return
+    # 원하는 프리셋 계산
+    if label == "최근 1주":
+        s = (today_ts - pd.Timedelta(days=6)).date(); e = today_d
+    elif label == "최근 1개월":
+        s = (today_ts - pd.Timedelta(days=29)).date(); e = today_d
+    elif label == "이번 달":
+        s = today_ts.replace(day=1).date(); e = today_d
+    elif label == "지난 달":
         first_this = today_ts.replace(day=1)
-        last_month_end = first_this - pd.Timedelta(days=1)
-        first_last = last_month_end.replace(day=1).date()
-        st.session_state["sales_date_range"] = (first_last, last_month_end.date())
-        st.experimental_rerun()
+        last_end   = first_this - pd.Timedelta(days=1)
+        s = last_end.replace(day=1).date(); e = last_end.date()
+    else:
+        return
+    # 범위 클램프 + 상태 업데이트 (리런 자동)
+    s = max(min_dt, min(s, max_dt)); e = max(s, min(e, max_dt))
+    st.session_state["sales_date_range"] = (s, e)
+    st.session_state["sales_date_input"] = (s, e)
 
-    st.session_state["sales_date_range"] = (start_date, end_date)
+with c2:
+    # 메인 date_input
+    start_val, end_val = st.session_state["sales_date_range"]
+    dr = st.date_input(
+        "조회 기간",
+        value=(start_val, end_val),
+        min_value=min_dt,
+        max_value=max_dt,
+        key="sales_date_input"
+    )
+    if isinstance(dr, (list, tuple)) and len(dr) == 2:
+        s, e = dr
+    else:
+        s = e = dr
+    s = max(min_dt, min(s, max_dt)); e = max(s, min(e, max_dt))
+    st.session_state["sales_date_range"] = (s, e)
 
-start = pd.to_datetime(st.session_state["sales_date_range"][0])
-end   = pd.to_datetime(st.session_state["sales_date_range"][1]) + pd.Timedelta(hours=23, minutes=59, seconds=59)
-period_days = (end - start).days + 1
-prev_start  = start - pd.Timedelta(days=period_days)
-prev_end    = start - pd.Timedelta(seconds=1)
+    # 날짜 선택 바로 아래에 붙는 프리셋(달력 밖에서 조작하지만 rerun 없이 자연 반영)
+    try:
+        # Streamlit 1.32+ 권장
+        st.segmented_control(
+            "",
+            options=["최근 1주", "최근 1개월", "이번 달", "지난 달"],
+            key="quick_range",
+            on_change=_apply_quick_range
+        )
+    except Exception:
+        # 구버전 호환: pills 사용
+        st.pills(
+            "",
+            options=["최근 1주", "최근 1개월", "이번 달", "지난 달"],
+            selection_mode="single",
+            key="quick_range",
+            on_change=_apply_quick_range
+        )
 
 # ========== AGG ==========
 def temu_agg(df, s, e):

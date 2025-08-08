@@ -287,6 +287,14 @@ st.markdown(f"""
 
 # ========== DAILY CHART (robust) ==========
 st.markdown("<div class='block-title'>일별 판매 추이</div>", unsafe_allow_html=True)
+# daily 계산은 기존 로직 그대로 쓰고, 여기서는 그려주기만
+chart_box = st.empty()  # 안전한 그릴자리
+
+if daily.empty:
+    _ = chart_box.info("해당 기간에 데이터가 없습니다.")
+else:
+    # 반환 객체를 변수에 받아서 버림 -> 화면에 문서가 출력되는 부작용 방지
+    _ = chart_box.line_chart(daily[["Total_Sales", "qty"]])
 if platform == "TEMU":
     t = df_temu[(df_temu["order date"]>=start)&(df_temu["order date"]<=end)]
     t = t[t["order item status"].str.lower().isin(["shipped","delivered"])]

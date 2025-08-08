@@ -24,6 +24,26 @@ st.markdown("""
 .insight-list li { margin:4px 0; line-height:1.45; }
 img.thumb { width:60px; height:auto; border-radius:10px; }
 .block-title { margin:18px 0 8px 0; font-weight:700; font-size:1.05rem; }
+/* Best Seller 테이블을 가로 100%로, 칸 넓게 */
+.best-card .table-wrap { width:100%; }
+.best-card table { width:100% !important; table-layout:fixed; border-collapse:separate; border-spacing:0; }
+.best-card th, .best-card td { padding:12px 14px; font-size:0.95rem; }
+.best-card th { background:#fafafa; }
+.best-card td { vertical-align:middle; }
+
+/* 컬럼 별 폭 (1:이미지, 2:스타일, 나머지 숫자 컬럼) */
+.best-card table thead th:nth-child(1),
+.best-card table tbody td:nth-child(1) { width:110px; }
+.best-card table thead th:nth-child(2),
+.best-card table tbody td:nth-child(2) { width:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.best-card table thead th:nth-child(n+3),
+.best-card table tbody td:nth-child(n+3) { width:120px; text-align:right; }
+
+/* 이미지 조금 키우기 */
+img.thumb { width:80px; height:auto; border-radius:10px; }
+
+/* 카드 자체도 여백 조금 더 */
+.best-card.cap-card { padding:18px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -431,6 +451,7 @@ def best_table(platform, df_sold, s, e):
     return mix[["Image","Style Number","Sold Qty","TEMU Qty","SHEIN Qty"]]
 
 best_df = best_table(platform, df_sold, start, end)
-st.markdown("<div class='cap-card'>", unsafe_allow_html=True)
+# Best Seller 10 (full-width table)
+st.markdown("<div class='cap-card best-card'><div class='table-wrap'>", unsafe_allow_html=True)
 st.markdown(best_df.to_html(escape=False, index=False), unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
+st.markdown("</div></div>", unsafe_allow_html=True)

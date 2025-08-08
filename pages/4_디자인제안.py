@@ -331,7 +331,7 @@ IMAGE_HEADER = (
 def make_prompt(attrs:dict, season:str, variant:int, refs:list, goal:str, category:str):
     parts = [IMAGE_HEADER]
     if refs:
-        parts.append("Inspirations: " + ", ".join(refs[:4]) + ". ")
+        parts.append("Inspirations: " + ", ".join(refs[:2]) + ". ")
     parts.append(category_sentence(category, attrs, season) + " ")
     parts.append("Fabric grain and seams visible. ")
     parts.append(goal_tone(goal) + " ")

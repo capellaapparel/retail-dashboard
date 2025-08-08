@@ -16,12 +16,9 @@ st.markdown("""
 .cap-card { border:1px solid #e9e9ef; border-radius:12px; padding:16px; background:#fff; }
 .cap-card + .cap-card { margin-top:14px; }
 
-/* KPI 그리드 */
-.kpi-grid { display:grid; grid-template-columns: repeat(4, minmax(240px, 1fr)); gap:16px; }
-.kpi-item { border:1px solid #f0f0f5; border-radius:12px; padding:16px; background:#fff; }
-.kpi-title { font-size:0.92rem; color:#61616b; }
-.kpi-value { font-size:1.5rem; font-weight:700; margin-top:6px; }
-.kpi-delta { font-size:0.86rem; margin-top:4px; }
+/* KPI 박스(외곽 네모만, 내부는 native metric 사용) */
+.kpi-wrap { display:grid; grid-template-columns: repeat(4, minmax(240px, 1fr)); gap:16px; }
+.kpi-cell { border:1px solid #f0f0f5; border-radius:12px; padding:14px 16px; background:#fff; }
 
 /* 인사이트 */
 .insight-title { font-weight:700; margin-bottom:8px; font-size:1.05rem; }
@@ -46,9 +43,6 @@ st.markdown("""
 
 /* 상품 이미지 확대 */
 img.thumb { width:84px; height:auto; border-radius:10px; }
-
-/* 위쪽 KPI/인사이트가 공간을 많이 먹지 않게 */
-.shrink-top .kpi-value { font-size:1.35rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -91,15 +85,7 @@ def _safe_minmax(*series):
         return t, t
     return s.min().date(), s.max().date()
 
-def kpi_delta_html(cur, prev):
-    if prev in (0, None) or pd.isna(prev): return ""
-    pct = (cur - prev) / prev * 100
-    arrow = "▲" if pct >= 0 else "▼"
-    color = "#11b500" if pct >= 0 else "red"
-    return f"<span class='kpi-delta' style='color:{color}'>{arrow} {abs(pct):.1f}%</span>"
-
 STYLE_RE = re.compile(r"\b([A-Z]{1,3}\d{3,5}[A-Z0-9]?)\b")
-
 def build_img_map(df_info: pd.DataFrame):
     keys = df_info["product number"].astype(str).str.upper().str.replace(" ", "", regex=False)
     return dict(zip(keys, df_info["image"]))
@@ -258,43 +244,30 @@ else:
     p_sold = pd.concat([d1p, d2p], ignore_index=True)
 
 # =========================
-# 5) KPI (compact)
+# 5) KPI (native metric inside card → HTML 꼬임 방지)
 # =========================
-kpi_html = f"""
-<div class='cap-card shrink-top'>
-  <div class='kpi-grid'>
-    <div class='kpi-item'>
-      <div class='kpi-title'>Total Order Amount</div>
-      <div class='kpi-value'>${sales_sum:,.2f}</div>
-      {kpi_delta_html(sales_sum, psales)}
-    </div>
-    <div class='kpi-item'>
-      <div class='kpi-title'>Total Order Quantity</div>
-      <div class='kpi-value'>{int(qty_sum):,}</div>
-      {kpi_delta_html(qty_sum, pqty)}
-    </div>
-    <div class='kpi-item'>
-      <div class='kpi-title'>AOV</div>
-      <div class='kpi-value'>${aov:,.2f}</div>
-      {kpi_delta_html(aov, paov)}
-    </div>
-    <div class='kpi-item'>
-      <div class='kpi-title'>Canceled Order</div>
-      <div class='kpi-value'>{int(cancel_qty):,}</div>
-      {kpi_delta_html(cancel_qty, pcancel)}
-    </div>
-  </div>
-</div>
-"""
-st.markdown(kpi_html, unsafe_allow_html=True)
+with st.container():
+    st.markdown("<div class='cap-card'>", unsafe_allow_html=True)
+    cols = st.columns(4, gap="small")
+    # delta 계산
+    def _delta_str(now, prev):
+        if prev in (0, None) or pd.isna(prev): return "—"
+        pct = (now - prev) / prev * 100
+        sign = "+" if pct >= 0 else ""
+        return f"{sign}{pct:.1f}%"
+    with cols[0]:
+        st.metric("Total Order Amount", f"${sales_sum:,.2f}", _delta_str(sales_sum, psales))
+    with cols[1]:
+        st.metric("Total Order Quantity", f"{int(qty_sum):,}", _delta_str(qty_sum, pqty))
+    with cols[2]:
+        st.metric("AOV", f"${aov:,.2f}", _delta_str(aov, paov))
+    with cols[3]:
+        st.metric("Canceled Order", f"{int(cancel_qty):,}", _delta_str(cancel_qty, pcancel))
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # =========================
 # 6) Insights
 # =========================
-def pct_change(cur, prev):
-    if prev in (0, None) or pd.isna(prev): return None
-    return (cur - prev) / prev * 100.0
-
 def get_bestseller_labels(platform, df_sold, s, e):
     if platform == "TEMU":
         best = df_sold.groupby("product number")["quantity shipped"].sum().sort_values(ascending=False).head(10)
@@ -323,13 +296,10 @@ def get_bestseller_labels(platform, df_sold, s, e):
 
 def build_insights():
     bullets = []
-    ac = pct_change(aov, paov)
     cur_top, _ = get_bestseller_labels(platform, df_sold, start, end)
     prev_top, _ = get_bestseller_labels(platform, p_sold, prev_start, prev_end) if 'p_sold' in locals() else ([], [])
     entered = [x for x in cur_top if x not in prev_top]
     dropped = [x for x in prev_top if x not in cur_top]
-    if ac is not None and abs(ac) >= 5:
-        bullets.append(f"ℹ️ AOV가 **{'하락' if ac<0 else '상승'} {abs(ac):.1f}%** 변했습니다.")
     if entered:
         bullets.append(f"✅ Top10 **신규 진입**: {', '.join(entered)} → 재고 확보/광고 확대 권장.")
     if dropped:
@@ -383,15 +353,15 @@ def build_daily(platform: str, s: pd.Timestamp, e: pd.Timestamp) -> pd.DataFrame
     return daily.reset_index().set_index("order date").fillna(0.0)
 
 st.markdown("<div class='block-title'>일별 판매 추이</div>", unsafe_allow_html=True)
-daily = build_daily(platform, start, end)
+_daily = build_daily(platform, start, end)
 box = st.empty()
-if daily.empty:
+if _daily.empty:
     box.info("해당 기간에 데이터가 없습니다.")
 else:
-    _ = box.line_chart(daily[["Total_Sales","qty"]])
+    _ = box.line_chart(_daily[["Total_Sales","qty"]])
 
 # =========================
-# 8) Best Seller (full-width card; 아래 빈 박스 없음)
+# 8) Best Seller (full-width card)
 # =========================
 st.markdown("<div class='block-title'>Best Seller 10</div>", unsafe_allow_html=True)
 

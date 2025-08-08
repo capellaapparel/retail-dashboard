@@ -239,20 +239,40 @@ def make_prompt(attrs:dict, season:str, variant:int, refs:list, goal:str):
         "트렌드 반영(전진형)": "trend-forward, subtle editorial touch",
         "원가절감형(가성비)": "cost-effective construction, simplified detail",
     }[goal]
-    parts=[]
+
+    # ✅ 이미지 강제 지시 헤더 (가장 앞에 둬야 함)
+    image_header = (
+        "CREATE EXACTLY ONE IMAGE.\n"
+        "Use the image-generation tool to render a single **photo‑realistic** studio product image.\n"
+        "Canvas: 1024x1536 (vertical), PNG. Plain flat background, even soft lighting.\n"
+        "Do not write any text or captions in your response—**return the image only**.\n"
+    )
+
+    parts = [image_header]
+
     if refs:
         parts.append("Inspirations: " + ", ".join(refs[:4]) + ". ")
+
     desc = f"Design a {season.lower()} {attrs.get('fit','-')} {attrs.get('length','-')} dress"
-    if _clean(attrs.get("neckline")):
+    if attrs.get("neckline") and str(attrs["neckline"]).strip() not in ["-","nan","none",""]:
         desc += f" with {attrs['neckline']} neckline"
-    if _clean(attrs.get("detail")):
+    if attrs.get("detail") and str(attrs["detail"]).strip() not in ["-","nan","none",""]:
         desc += f", detail: {attrs['detail']}"
-    if _clean(attrs.get('style mood')):
+    if attrs.get("style mood") and str(attrs["style mood"]).strip() not in ["-","nan","none",""]:
         desc += f", style mood: {attrs['style mood']}"
     desc += ". "
+
     parts.append(desc)
-    parts.append("Photo-realistic studio shot, front view, full-length, flat background, even soft lighting. ")
+
+    # 제품 촬영 가이드 (이미지용)
+    parts.append(
+        "Model-free mannequin or clean flat-lay look. Garment centered, full-length in frame. "
+        "No extra props, no hands, no text overlays. Fabric grain and seams visible.\n"
+    )
+
+    # 목적/리스크
     parts.append(goal_hint + ". ")
+
     parts.append(f"Variant #{variant}.")
     return "".join(parts)
 

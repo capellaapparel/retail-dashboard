@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from dateutil import parser
 from collections import Counter
+import os
 
 # =========================
 # 페이지 설정
@@ -40,7 +41,6 @@ def load_google_sheet(sheet_name: str) -> pd.DataFrame:
         json.dump(creds_json, f)
     creds = ServiceAccountCredentials.from_json_keyfile_name("/tmp/service_account.json", scope)
     client = gspread.authorize(creds)
-    # ❗ URL이 바뀌면 여기만 수정
     ws = client.open_by_url(GOOGLE_SHEET_URL).worksheet(sheet_name)
     df = pd.DataFrame(ws.get_all_records())
     df.columns = [c.lower().strip() for c in df.columns]
@@ -49,13 +49,6 @@ def load_google_sheet(sheet_name: str) -> pd.DataFrame:
 def _clean_str(x):
     s = str(x).strip()
     return s if s and s.lower() not in ["nan", "none", "-", ""] else None
-
-def month_to_season(m: int) -> str:
-    # 미국만 고려: 북반구 기준
-    if m in [12,1,2]: return "winter"
-    if m in [3,4,5]:  return "spring"
-    if m in [6,7,8]:  return "summer"
-    return "fall"
 
 # =========================
 # 데이터 로드
@@ -75,7 +68,7 @@ IMG_MAP = dict(zip(df_info.get("product number", pd.Series(dtype=str)).astype(st
 ATTR_COLS = ["neckline", "length", "fit", "detail", "style mood"]
 
 # =========================
-# 사이드바 컨트롤
+# 사이드바 컨트롤 (수동 시즌)
 # =========================
 st.sidebar.header("⚙️ 설정")
 
@@ -89,32 +82,17 @@ else:
     start_date = end_date = pd.to_datetime(dr)
 
 platform = st.sidebar.radio("플랫폼", ["TEMU", "SHEIN", "BOTH"], horizontal=True)
-auto_season = st.sidebar.checkbox("시즌 자동 감지(최근 판매월)", value=True)
-manual_season = st.sidebar.selectbox("수동 시즌", ["spring","summer","fall","winter"], index=1)
 topN = st.sidebar.slider("분석 상위 스타일 수", 10, 200, 50)
 
-# 시즌 결정 (미국 기준)
-if auto_season:
-    frames = []
-    if platform in ["TEMU", "BOTH"]:
-        t = df_temu[(df_temu["order date"] >= start_date) & (df_temu["order date"] <= end_date)]
-        t = t[t["order item status"].astype(str).str.lower().isin(["shipped","delivered"])]
-        frames.append(t[["order date"]])
-    if platform in ["SHEIN", "BOTH"]:
-        s = df_shein[(df_shein["order date"] >= start_date) & (df_shein["order date"] <= end_date)]
-        s = s[~s["order status"].astype(str).str.lower().isin(["customer refunded"])]
-        frames.append(s[["order date"]])
-    if frames:
-        d = pd.concat(frames, ignore_index=True)
-        if d.empty:
-            target_season = manual_season
-        else:
-            seasons = d["order date"].dt.month.apply(month_to_season)
-            target_season = seasons.mode().iloc[0] if not seasons.empty else manual_season
-    else:
-        target_season = manual_season
-else:
-    target_season = manual_season
+year = st.sidebar.number_input("예측 연도", min_value=2024, max_value=2030, value=2025, step=1)
+season = st.sidebar.selectbox("타깃 시즌(수동)", ["Spring", "Summer", "Fall", "Winter"], index=1)
+
+# (선택) OpenAI API 키 입력 → 있으면 트렌드 ‘예측’ 호출, 없으면 기본 리스트 사용
+st.sidebar.markdown("---")
+use_ai_trend = st.sidebar.checkbox("OpenAI로 시즌 트렌드 예측 사용", value=False)
+api_key = None
+if use_ai_trend:
+    api_key = st.sidebar.text_input("OpenAI API Key (선택)", type="password")
 
 # =========================
 # 판매 집계 + 상위 N
@@ -160,31 +138,90 @@ for _, r in top_df.iterrows():
 dominant_now = {c: (attr_counts[c].most_common(1)[0][0] if attr_counts[c] else "-") for c in ATTR_COLS}
 
 # =========================
-# 트렌드 인사이트 (고정 리스트; 필요시 업데이트)
+# 트렌드 인사이트 (AI 예측 또는 기본 리스트)
 # =========================
-def curated_trends_for_2025_summer():
-    # 인터넷 크롤링 없이, 운영 중 깨지지 않게 유지하는 고정 인사이트
-    return [
-        "버블/버룬 헴라인과 드레이핑 실루엣이 주목",
-        "슬림 핏 미디 길이의 미니멀 드레스 상향",
-        "셔링/주름(플리츠) 포인트와 컷아웃의 절제된 사용",
-        "깨끗한 솔리드 컬러 + 저채도의 파스텔 팔레트",
-        "실용 디테일(포켓 등)과 캐주얼 무드의 결합 증가",
-    ]
+def curated_trends(year:int, season:str):
+    season = season.lower()
+    # 시즌별 "예측" 기본 리스트 (유지보수 쉬움)
+    base = {
+        "spring": [
+            "소프트 파스텔 & 아이시 뉴트럴 팔레트",
+            "라이트 레이어링: 얇은 니트/셔츠 드레스",
+            "셔링·드레이핑 디테일 소폭 증가",
+            "미디 길이의 슬림/레귤러 핏 상향",
+            "미니멀 하드웨어, 실용 포켓/벨트 포인트"
+        ],
+        "summer": [
+            "린넨/코튼 터치감의 경량 소재 선호",
+            "슬림 핏 미디~맥시 길이 상향",
+            "절제된 슬릿/컷아웃으로 통기성과 포인트",
+            "무지/저채도 솔리드, 톤온톤 스타일링",
+            "포켓/버튼 등 실용 디테일 결합"
+        ],
+        "fall": [
+            "미디~롱 기장의 니트/저지 드레스 확대",
+            "톤다운 뉴트럴·어스톤 포커스",
+            "버튼·지퍼 대신 클린한 미니멀 클로징",
+            "세미피트 혹은 살짝 릴랙스드 실루엣",
+            "핀턱/와이드 립 등 텍스처 포인트"
+        ],
+        "winter": [
+            "헤비게이지 니트·울 블렌드 소재",
+            "하이넥·목선 커버 디자인 선호",
+            "다크 뉴트럴 + 저채도 컬러 포인트",
+            "롱 슬리브 & 맥시 길이 중심",
+            "퀼팅/패치 포켓 등 실용성 강조"
+        ],
+    }
+    # 연도 넣어 문구 강화
+    return [f"{year} {season.title()} 예측: {t}" for t in base.get(season, [])]
 
-trend_bullets = curated_trends_for_2025_summer()
+def get_ai_trend(year:int, season:str, api_key:str|None):
+    if not api_key:
+        return curated_trends(year, season)
+    try:
+        # OpenAI SDK (>=1.x)
+        from openai import OpenAI
+        os.environ["OPENAI_API_KEY"] = api_key
+        client = OpenAI()
+        prompt = (
+            f"Predict concise, actionable women's apparel trends for {year} {season}.\n"
+            f"Return 5 bullets covering silhouettes, details, fabrics, and color directions, "
+            f"optimised for mass-market dress design. No preamble."
+        )
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role":"system","content":"You are a fashion trend forecaster for mass-market womenswear."},
+                {"role":"user","content":prompt},
+            ],
+            temperature=0.7,
+            max_tokens=300,
+        )
+        text = resp.choices[0].message.content.strip()
+        # 줄 단위 → 리스트
+        lines = [l.strip("-• \n\r") for l in text.splitlines() if l.strip()]
+        if not lines:
+            return curated_trends(year, season)
+        return [f"{year} {season.title()} 예측: {l}" for l in lines[:5]]
+    except Exception:
+        # 실패 시 기본 리스트
+        return curated_trends(year, season)
+
+trend_bullets = get_ai_trend(year, season, api_key if use_ai_trend else None)
 
 # =========================
 # 시즌 보정(라이트) — 제공 컬럼만 활용
 # =========================
 def adjust_attrs_for_season(attrs:dict, season:str):
     a = attrs.copy()
-    if season == "summer":
+    s = season.lower()
+    if s == "summer":
         if not _clean_str(a.get("length")): a["length"] = "midi"
         if not _clean_str(a.get("fit")):    a["fit"]    = "slim"
-    elif season == "spring":
+    elif s == "spring":
         if not _clean_str(a.get("fit")):    a["fit"]    = "regular"
-    elif season == "fall":
+    elif s == "fall":
         if not _clean_str(a.get("fit")):    a["fit"]    = "regular"
     else:  # winter
         if not _clean_str(a.get("fit")):    a["fit"]    = "regular"
@@ -192,7 +229,7 @@ def adjust_attrs_for_season(attrs:dict, season:str):
     # 남은 None/빈값은 "-" 처리
     return {k:(v if _clean_str(v) else "-") for k,v in a.items()}
 
-adj_attrs = adjust_attrs_for_season(dominant_now, target_season)
+adj_attrs = adjust_attrs_for_season(dominant_now, season)
 
 # =========================
 # 레퍼런스 이미지(상위 몇 개)
@@ -215,7 +252,7 @@ def make_prompt(attrs:dict, season:str, variant:int, refs:list, goal:str):
     parts=[]
     if refs:
         parts.append("Inspirations: " + ", ".join(refs[:4]) + ". ")
-    desc = f"Design a {season} {attrs.get('fit','-')} {attrs.get('length','-')} dress"
+    desc = f"Design a {season.lower()} {attrs.get('fit','-')} {attrs.get('length','-')} dress"
     if _clean_str(attrs.get("neckline")):
         desc += f" with {attrs['neckline']} neckline"
     if _clean_str(attrs.get("detail")):
@@ -231,7 +268,7 @@ def make_prompt(attrs:dict, season:str, variant:int, refs:list, goal:str):
 
 goal = st.selectbox("디자인 목적", ["리스크 적고 안전한 변형","트렌드 반영(전진형)","원가절감형(가성비)"], index=0)
 num_variants = st.slider("프롬프트 개수", 1, 6, 3)
-prompts = [make_prompt(adj_attrs, target_season, i+1, ref_urls, goal) for i in range(num_variants)]
+prompts = [make_prompt(adj_attrs, season, i+1, ref_urls, goal) for i in range(num_variants)]
 
 # =========================
 # 출력
@@ -242,7 +279,7 @@ with left:
     st.subheader("📄 디자인 브리프")
     st.markdown(f"- 분석기간: **{start_date.date()} ~ {end_date.date()}**")
     st.markdown(f"- 플랫폼: **{platform}**")
-    st.markdown(f"- 타깃 시즌: **{target_season}**")
+    st.markdown(f"- 타깃 시즌(예측 연도 포함): **{season} {year}**")
     st.markdown("**핵심 속성(시즌 보정 반영):**")
     st.markdown(f"""
 - neckline: **{adj_attrs.get('neckline','-')}**
@@ -251,12 +288,13 @@ with left:
 - detail: **{adj_attrs.get('detail','-')}**
 - style mood: **{adj_attrs.get('style mood','-')}**
     """)
-    st.markdown("**트렌드 인사이트(레퍼런스 & 내부 데이터 요약):**")
+
+    st.markdown("**트렌드 인사이트 (AI 예측 / 기본 리스트):**")
     for b in trend_bullets:
         st.markdown(f"- {b}")
 
     st.subheader("🎯 생성 프롬프트 (이미지 모델용)")
-    st.caption("💡 아래 프롬프트를 **ChatGPT**(이미지 생성 모델) 에 붙여넣으면 **DALL·E 3**로 바로 생성됩니다. Midjourney/Firefly/Leonardo에서도 사용 가능.")
+    st.caption("💡 아래 프롬프트를 **ChatGPT(이미지 생성 모델)**에 붙여넣으면 **DALL·E 3**로 바로 생성됩니다. Midjourney/Firefly/Leonardo에서도 사용 가능.")
     for i, p in enumerate(prompts, 1):
         st.markdown(f"**Prompt {i}**")
         st.code(p)

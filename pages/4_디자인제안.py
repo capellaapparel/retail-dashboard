@@ -4,10 +4,10 @@ import pandas as pd
 import numpy as np
 from dateutil import parser
 from collections import Counter
-import os
+from math import ceil
 
 # =========================
-# 페이지 설정
+# 기본 설정
 # =========================
 st.set_page_config(page_title="AI 의류 디자인 제안", layout="wide")
 st.title("🧠✨ AI 의류 디자인 제안")
@@ -32,7 +32,6 @@ def load_google_sheet(sheet_name: str) -> pd.DataFrame:
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
     import json
-    # ✅ 실제 사용 중인 시트 URL
     GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
     scope = ["https://spreadsheets.google.com/feeds",
              "https://www.googleapis.com/auth/drive"]
@@ -46,9 +45,29 @@ def load_google_sheet(sheet_name: str) -> pd.DataFrame:
     df.columns = [c.lower().strip() for c in df.columns]
     return df
 
-def _clean_str(x):
+def _clean(x):
     s = str(x).strip()
-    return s if s and s.lower() not in ["nan", "none", "-", ""] else None
+    return s if s and s.lower() not in ["nan","none","-",""] else None
+
+def season_of_month(m: int) -> str:
+    if m in [3,4,5]: return "Spring"
+    if m in [6,7,8]: return "Summer"
+    if m in [9,10,11]: return "Fall"
+    return "Winter"  # 12,1,2
+
+def months_ago(ts: pd.Timestamp) -> int:
+    today = pd.Timestamp.today()
+    return max(0, (today.year - ts.year) * 12 + (today.month - ts.month))
+
+def season_sets(target: str):
+    target = target.capitalize()
+    if target == "Spring":
+        return set([3,4,5]), set([2,6])
+    if target == "Summer":
+        return set([6,7,8]), set([5,9])
+    if target == "Fall":
+        return set([9,10,11]), set([8,12])
+    return set([12,1,2]), set([11,3])  # Winter
 
 # =========================
 # 데이터 로드
@@ -62,153 +81,99 @@ df_temu["order date"]  = df_temu["purchase date"].apply(parse_temudate)
 df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 
 # 이미지 맵
-IMG_MAP = dict(zip(df_info.get("product number", pd.Series(dtype=str)).astype(str), df_info.get("image", "")))
+IMG_MAP = dict(zip(df_info.get("product number", pd.Series(dtype=str)).astype(str), df_info.get("image","")))
 
-# PRODUCT_INFO 실제 컬럼만 사용
+# 실제 사용하는 속성
 ATTR_COLS = ["neckline", "length", "fit", "detail", "style mood"]
+for c in ATTR_COLS:
+    if c not in df_info.columns:
+        df_info[c] = None  # 안전
 
 # =========================
-# 사이드바 컨트롤 (수동 시즌)
+# 사이드바: 수동 시즌/연도 & 기타
 # =========================
 st.sidebar.header("⚙️ 설정")
-
-today = pd.Timestamp.today().normalize()
-default_start = (today - pd.Timedelta(days=60)).date()
-default_end   = today.date()
-dr = st.sidebar.date_input("분석 기간", (default_start, default_end))
-if isinstance(dr, (list, tuple)) and len(dr) == 2:
-    start_date, end_date = map(pd.to_datetime, dr)
-else:
-    start_date = end_date = pd.to_datetime(dr)
-
 platform = st.sidebar.radio("플랫폼", ["TEMU", "SHEIN", "BOTH"], horizontal=True)
-topN = st.sidebar.slider("분석 상위 스타일 수", 10, 200, 50)
-
 year = st.sidebar.number_input("예측 연도", min_value=2024, max_value=2030, value=2025, step=1)
-season = st.sidebar.selectbox("타깃 시즌(수동)", ["Spring", "Summer", "Fall", "Winter"], index=1)
-
-# (선택) OpenAI API 키 입력 → 있으면 트렌드 ‘예측’ 호출, 없으면 기본 리스트 사용
-st.sidebar.markdown("---")
-use_ai_trend = st.sidebar.checkbox("OpenAI로 시즌 트렌드 예측 사용", value=False)
-api_key = None
-if use_ai_trend:
-    api_key = st.sidebar.text_input("OpenAI API Key (선택)", type="password")
+season = st.sidebar.selectbox("타깃 시즌", ["Spring","Summer","Fall","Winter"], index=1)
+topN = st.sidebar.slider("분석 상위 스타일 수 (가중치 반영)", 10, 200, 50)
+num_variants = st.sidebar.slider("생성 프롬프트 개수", 1, 6, 3)
+goal = st.sidebar.selectbox("디자인 목적", ["리스크 적고 안전한 변형","트렌드 반영(전진형)","원가절감형(가성비)"], index=0)
 
 # =========================
-# 판매 집계 + 상위 N
+# (핵심) 가중치 계산: 전체 데이터 기반 + 시즌/연도 치중
 # =========================
-def get_sales_by_style():
+target_months, adjacent_months = season_sets(season)
+
+def row_weight(order_dt: pd.Timestamp) -> float:
+    if pd.isna(order_dt): return 0.0
+    m = int(order_dt.month)
+    y = int(order_dt.year)
+    w_season = 1.0 if m in target_months else (0.7 if m in adjacent_months else 0.4)
+    # 타깃 연도의 직전 시즌(예: 2025 Winter → 2024 Dec/2025 Jan/Feb) 가중치 +
+    prev_year_boost = 1.0
+    if m in target_months and (y == year-1 or (season=="Winter" and ((y==year and m in [1,2]) or (y==year-1 and m==12)))):
+        prev_year_boost = 1.3
+    # 최신 데이터 가중(최근 18개월 1.0, 그 외 0.7)
+    rec = months_ago(order_dt)
+    w_recency = 1.0 if rec <= 18 else 0.7
+    return w_season * prev_year_boost * w_recency
+
+# =========================
+# 판매 집계(전체 데이터) + 가중치 적용
+# =========================
+def build_weighted_sales():
     frames=[]
     if platform in ["TEMU","BOTH"]:
-        t = df_temu[(df_temu["order date"]>=start_date)&(df_temu["order date"]<=end_date)].copy()
+        t = df_temu.copy()
         t = t[t["order item status"].astype(str).str.lower().isin(["shipped","delivered"])]
         t["qty"] = pd.to_numeric(t["quantity shipped"], errors="coerce").fillna(0)
-        t = t.groupby("product number")["qty"].sum().reset_index().rename(columns={"product number":"style"})
+        t["w"] = t["order date"].apply(row_weight)
+        t["wqty"] = t["qty"] * t["w"]
+        t = t.groupby("product number", as_index=False)["wqty"].sum()
+        t = t.rename(columns={"product number":"style"})
         frames.append(t)
     if platform in ["SHEIN","BOTH"]:
-        sh = df_shein[(df_shein["order date"]>=start_date)&(df_shein["order date"]<=end_date)].copy()
-        sh = sh[~sh["order status"].astype(str).str.lower().isin(["customer refunded"])]
-        sh["qty"] = 1
-        sh = sh.groupby("product description")["qty"].sum().reset_index().rename(columns={"product description":"style"})
-        frames.append(sh)
+        s = df_shein.copy()
+        s = s[~s["order status"].astype(str).str.lower().isin(["customer refunded"])]
+        s["qty"] = 1.0
+        s["w"] = s["order date"].apply(row_weight)
+        s["wqty"] = s["qty"] * s["w"]
+        s = s.groupby("product description", as_index=False)["wqty"].sum()
+        s = s.rename(columns={"product description":"style"})
+        frames.append(s)
     if not frames:
-        return pd.DataFrame(columns=["style","qty"])
+        return pd.DataFrame(columns=["style","wqty"])
     return pd.concat(frames, ignore_index=True)
 
-sales = get_sales_by_style()
-if sales.empty:
-    st.info("선택한 기간/플랫폼에 판매 데이터가 없습니다.")
+w_sales = build_weighted_sales()
+if w_sales.empty:
+    st.info("데이터가 없습니다. 시트를 확인하세요.")
     st.stop()
 
+# 상위 N 스타일
+top_styles = w_sales.sort_values("wqty", ascending=False).head(topN)["style"].astype(str).tolist()
+
+# 상위 N 상세 조인
 info = df_info.copy()
 info.rename(columns={"product number":"style"}, inplace=True)
-merged = sales.merge(info, on="style", how="left")
-top_df = merged.sort_values("qty", ascending=False).head(topN).copy()
+info["style"] = info["style"].astype(str)
+top_df = info[info["style"].isin(top_styles)].copy()
 
 # =========================
-# 속성 집계 (현재 기간)
+# 속성 집계 (가중 카운트)
 # =========================
+# 스타일별 가중치 합을 다시 매핑하여 속성에 곱함
+style_w = dict(zip(w_sales["style"].astype(str), w_sales["wqty"]))
 attr_counts = {c: Counter() for c in ATTR_COLS}
 for _, r in top_df.iterrows():
+    sw = style_w.get(str(r["style"]), 0.0)
     for c in ATTR_COLS:
-        if c in top_df.columns:
-            v = _clean_str(r.get(c))
-            if v: attr_counts[c][v] += 1
+        v = _clean(r.get(c))
+        if v and sw>0:
+            attr_counts[c][v] += sw
 
-dominant_now = {c: (attr_counts[c].most_common(1)[0][0] if attr_counts[c] else "-") for c in ATTR_COLS}
-
-# =========================
-# 트렌드 인사이트 (AI 예측 또는 기본 리스트)
-# =========================
-def curated_trends(year:int, season:str):
-    season = season.lower()
-    # 시즌별 "예측" 기본 리스트 (유지보수 쉬움)
-    base = {
-        "spring": [
-            "소프트 파스텔 & 아이시 뉴트럴 팔레트",
-            "라이트 레이어링: 얇은 니트/셔츠 드레스",
-            "셔링·드레이핑 디테일 소폭 증가",
-            "미디 길이의 슬림/레귤러 핏 상향",
-            "미니멀 하드웨어, 실용 포켓/벨트 포인트"
-        ],
-        "summer": [
-            "린넨/코튼 터치감의 경량 소재 선호",
-            "슬림 핏 미디~맥시 길이 상향",
-            "절제된 슬릿/컷아웃으로 통기성과 포인트",
-            "무지/저채도 솔리드, 톤온톤 스타일링",
-            "포켓/버튼 등 실용 디테일 결합"
-        ],
-        "fall": [
-            "미디~롱 기장의 니트/저지 드레스 확대",
-            "톤다운 뉴트럴·어스톤 포커스",
-            "버튼·지퍼 대신 클린한 미니멀 클로징",
-            "세미피트 혹은 살짝 릴랙스드 실루엣",
-            "핀턱/와이드 립 등 텍스처 포인트"
-        ],
-        "winter": [
-            "헤비게이지 니트·울 블렌드 소재",
-            "하이넥·목선 커버 디자인 선호",
-            "다크 뉴트럴 + 저채도 컬러 포인트",
-            "롱 슬리브 & 맥시 길이 중심",
-            "퀼팅/패치 포켓 등 실용성 강조"
-        ],
-    }
-    # 연도 넣어 문구 강화
-    return [f"{year} {season.title()} 예측: {t}" for t in base.get(season, [])]
-
-def get_ai_trend(year:int, season:str, api_key:str|None):
-    if not api_key:
-        return curated_trends(year, season)
-    try:
-        # OpenAI SDK (>=1.x)
-        from openai import OpenAI
-        os.environ["OPENAI_API_KEY"] = api_key
-        client = OpenAI()
-        prompt = (
-            f"Predict concise, actionable women's apparel trends for {year} {season}.\n"
-            f"Return 5 bullets covering silhouettes, details, fabrics, and color directions, "
-            f"optimised for mass-market dress design. No preamble."
-        )
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role":"system","content":"You are a fashion trend forecaster for mass-market womenswear."},
-                {"role":"user","content":prompt},
-            ],
-            temperature=0.7,
-            max_tokens=300,
-        )
-        text = resp.choices[0].message.content.strip()
-        # 줄 단위 → 리스트
-        lines = [l.strip("-• \n\r") for l in text.splitlines() if l.strip()]
-        if not lines:
-            return curated_trends(year, season)
-        return [f"{year} {season.title()} 예측: {l}" for l in lines[:5]]
-    except Exception:
-        # 실패 시 기본 리스트
-        return curated_trends(year, season)
-
-trend_bullets = get_ai_trend(year, season, api_key if use_ai_trend else None)
+dominant = {c: (attr_counts[c].most_common(1)[0][0] if attr_counts[c] else "-") for c in ATTR_COLS}
 
 # =========================
 # 시즌 보정(라이트) — 제공 컬럼만 활용
@@ -216,32 +181,78 @@ trend_bullets = get_ai_trend(year, season, api_key if use_ai_trend else None)
 def adjust_attrs_for_season(attrs:dict, season:str):
     a = attrs.copy()
     s = season.lower()
+    # 결측만 보정; 과도한 변형 없이 시즌 정합성만 채움
     if s == "summer":
-        if not _clean_str(a.get("length")): a["length"] = "midi"
-        if not _clean_str(a.get("fit")):    a["fit"]    = "slim"
+        if not _clean(a.get("length")): a["length"] = "midi"
+        if not _clean(a.get("fit")):    a["fit"]    = "slim"
     elif s == "spring":
-        if not _clean_str(a.get("fit")):    a["fit"]    = "regular"
+        if not _clean(a.get("fit")):    a["fit"]    = "regular"
     elif s == "fall":
-        if not _clean_str(a.get("fit")):    a["fit"]    = "regular"
+        if not _clean(a.get("fit")):    a["fit"]    = "regular"
     else:  # winter
-        if not _clean_str(a.get("fit")):    a["fit"]    = "regular"
-        if not _clean_str(a.get("length")): a["length"] = "midi"
-    # 남은 None/빈값은 "-" 처리
-    return {k:(v if _clean_str(v) else "-") for k,v in a.items()}
+        if not _clean(a.get("fit")):    a["fit"]    = "regular"
+        if not _clean(a.get("length")): a["length"] = "midi"
+    return {k:(v if _clean(v) else "-") for k,v in a.items()}
 
-adj_attrs = adjust_attrs_for_season(dominant_now, season)
-
-# =========================
-# 레퍼런스 이미지(상위 몇 개)
-# =========================
-ref_urls=[]
-for s in top_df["style"].astype(str).head(6):
-    u = IMG_MAP.get(s, "")
-    if isinstance(u, str) and u.startswith("http"):
-        ref_urls.append(u)
+adj_attrs = adjust_attrs_for_season(dominant, season)
 
 # =========================
-# 프롬프트 생성 (이미지 모델용)
+# 트렌드 인사이트 (예측) — 시즌/연도별, 내부 데이터 기반 가중 + 규칙
+# =========================
+def forecast_trends(year:int, season:str, attr_counts:dict) -> list[str]:
+    s = season.lower()
+    bullets = []
+
+    # 1) 내부 데이터 기반 상위 속성 3개(시즌 가중 반영)
+    top_attr_lines = []
+    for col in ["fit","length","neckline","detail","style mood"]:
+        if attr_counts.get(col) and len(attr_counts[col])>0:
+            v, amt = attr_counts[col].most_common(1)[0]
+            top_attr_lines.append(f"{col}: `{v}` 상향")
+    if top_attr_lines:
+        bullets.append(f"{year} {season} 예측(내부 데이터 가중): " + "; ".join(top_attr_lines[:3]))
+
+    # 2) 시즌별 규칙적 제안(휴리스틱)
+    if s == "summer":
+        bullets += [
+            f"{year} {season} 예측: 경량 소재 감성의 슬림 실루엣 유지, 과한 컷아웃 대신 절제된 슬릿 포인트",
+            f"{year} {season} 예측: 저채도 솔리드/톤온톤 팔레트, 실용 디테일(포켓) 수요 지속",
+        ]
+    elif s == "spring":
+        bullets += [
+            f"{year} {season} 예측: 소프트 파스텔·아이시 뉴트럴, 셔링/드레이핑 완만한 증가",
+            f"{year} {season} 예측: 미디 길이의 레귤러~슬림 핏, 미니멀 하드웨어",
+        ]
+    elif s == "fall":
+        bullets += [
+            f"{year} {season} 예측: 니트/저지 드레스 비중 확대, 세미핏 또는 살짝 릴랙스드",
+            f"{year} {season} 예측: 톤다운 뉴트럴 중심, 텍스처(립/핀턱) 포인트",
+        ]
+    else:  # winter
+        bullets += [
+            f"{year} {season} 예측: 하이넥/목선 커버 실루엣, 롱 슬리브 전환 제안",
+            f"{year} {season} 예측: 맥시 길이 선호와 실용 디테일(패치 포켓 등) 유지",
+        ]
+
+    # 3) 교차시즌 캐리오버 제안(예: 여름 인기 디테일을 겨울에 장착하되 긴팔로 변환)
+    if s in ["fall","winter"]:
+        bullets.append(f"{year} {season} 예측: 여름 인기 ‘슬릿/포켓/미니멀 디테일’을 유지하되 긴팔·높은 넥라인으로 계절 적합화")
+    return bullets[:5]
+
+trend_bullets = forecast_trends(year, season, attr_counts)
+
+# =========================
+# 레퍼런스 이미지(가중 상위 몇 개)
+# =========================
+ref_urls = []
+top_styles_sorted = w_sales.sort_values("wqty", ascending=False)["style"].astype(str)
+for s_id in top_styles_sorted.head(6):
+    url = IMG_MAP.get(s_id, "")
+    if isinstance(url, str) and url.startswith("http"):
+        ref_urls.append(url)
+
+# =========================
+# 프롬프트 생성 (이미지 모델용) — closure/fabric/pattern 제거
 # =========================
 def make_prompt(attrs:dict, season:str, variant:int, refs:list, goal:str):
     goal_hint = {
@@ -253,11 +264,11 @@ def make_prompt(attrs:dict, season:str, variant:int, refs:list, goal:str):
     if refs:
         parts.append("Inspirations: " + ", ".join(refs[:4]) + ". ")
     desc = f"Design a {season.lower()} {attrs.get('fit','-')} {attrs.get('length','-')} dress"
-    if _clean_str(attrs.get("neckline")):
+    if _clean(attrs.get("neckline")):
         desc += f" with {attrs['neckline']} neckline"
-    if _clean_str(attrs.get("detail")):
+    if _clean(attrs.get("detail")):
         desc += f", detail: {attrs['detail']}"
-    if _clean_str(attrs.get('style mood')):
+    if _clean(attrs.get('style mood')):
         desc += f", style mood: {attrs['style mood']}"
     desc += ". "
     parts.append(desc)
@@ -266,8 +277,6 @@ def make_prompt(attrs:dict, season:str, variant:int, refs:list, goal:str):
     parts.append(f"Variant #{variant}.")
     return "".join(parts)
 
-goal = st.selectbox("디자인 목적", ["리스크 적고 안전한 변형","트렌드 반영(전진형)","원가절감형(가성비)"], index=0)
-num_variants = st.slider("프롬프트 개수", 1, 6, 3)
 prompts = [make_prompt(adj_attrs, season, i+1, ref_urls, goal) for i in range(num_variants)]
 
 # =========================
@@ -277,9 +286,8 @@ left, right = st.columns([1.7, 1.3])
 
 with left:
     st.subheader("📄 디자인 브리프")
-    st.markdown(f"- 분석기간: **{start_date.date()} ~ {end_date.date()}**")
     st.markdown(f"- 플랫폼: **{platform}**")
-    st.markdown(f"- 타깃 시즌(예측 연도 포함): **{season} {year}**")
+    st.markdown(f"- 타깃 시즌/연도: **{season} {year}**")
     st.markdown("**핵심 속성(시즌 보정 반영):**")
     st.markdown(f"""
 - neckline: **{adj_attrs.get('neckline','-')}**
@@ -289,7 +297,7 @@ with left:
 - style mood: **{adj_attrs.get('style mood','-')}**
     """)
 
-    st.markdown("**트렌드 인사이트 (AI 예측 / 기본 리스트):**")
+    st.markdown("**트렌드 인사이트(예측)**")
     for b in trend_bullets:
         st.markdown(f"- {b}")
 
@@ -300,7 +308,7 @@ with left:
         st.code(p)
 
 with right:
-    st.subheader("🔎 레퍼런스(베스트셀러)")
+    st.subheader("🔎 레퍼런스(베스트셀러·가중치 반영)")
     if ref_urls:
         st.image(ref_urls, width=160, caption=[f"ref{i+1}" for i in range(len(ref_urls))])
     else:

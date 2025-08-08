@@ -323,7 +323,7 @@ def category_sentence(category:str, attrs:dict, season:str)->str:
 IMAGE_HEADER = (
     "CREATE EXACTLY ONE IMAGE.\n"
     "Use the image-generation tool to render a single photo‑realistic studio product image.\n"
-    "Canvas: 1024x1536 (vertical), PNG. Plain flat background, even soft lighting.\n"
+    "Canvas: 768x1152 (vertical), PNG. Plain flat background, even soft lighting.\n"
     "Do not write any text or captions—return the image only.\n"
     "Model‑free mannequin or clean flat‑lay. Garment centered, full‑length. No hands, props, or overlays.\n"
 )

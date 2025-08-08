@@ -110,13 +110,17 @@ df_temu["base price total"] = clean_money(df_temu["base price total"])
 df_shein["order status"] = df_shein["order status"].astype(str)
 df_shein["product price"] = clean_money(df_shein["product price"])
 
-# ========== CONTROLS ==========
-# ---------- Controls (platform + date + quick presets) ----------
+# ---------- Controls (safe clamp + presets) ----------
 min_dt, max_dt = _safe_minmax(df_temu["order date"], df_shein["order date"])
 today_ts = pd.Timestamp.today().normalize()
 today_d  = today_ts.date()
-default_start = max(min_dt, (today_ts - pd.Timedelta(days=6)).date())
-default_end   = min(max_dt, today_d)
+
+def _clamp_date(d):  # 모든 날짜는 min/max 사이로
+    return max(min_dt, min(d, max_dt))
+
+# 초기 기본값
+default_start = _clamp_date((today_ts - pd.Timedelta(days=6)).date())
+default_end   = _clamp_date(today_d)
 
 if "sales_date_range" not in st.session_state:
     st.session_state["sales_date_range"] = (default_start, default_end)
@@ -127,9 +131,7 @@ with c1:
 
 def _apply_quick_range():
     label = st.session_state.get("quick_range")
-    if not label:
-        return
-    # 원하는 프리셋 계산
+    if not label: return
     if label == "최근 1주":
         s = (today_ts - pd.Timedelta(days=6)).date(); e = today_d
     elif label == "최근 1개월":
@@ -142,45 +144,53 @@ def _apply_quick_range():
         s = last_end.replace(day=1).date(); e = last_end.date()
     else:
         return
-    # 범위 클램프 + 상태 업데이트 (리런 자동)
-    s = max(min_dt, min(s, max_dt)); e = max(s, min(e, max_dt))
+    # ✅ 클램프 + 정렬 후 상태 업데이트
+    s = _clamp_date(s); e = _clamp_date(e)
+    if e < s: e = s
     st.session_state["sales_date_range"] = (s, e)
     st.session_state["sales_date_input"] = (s, e)
 
 with c2:
-    # 메인 date_input
-    start_val, end_val = st.session_state["sales_date_range"]
+    # 세션 상태를 먼저 안전하게 정제
+    s_val, e_val = st.session_state["sales_date_range"]
+    s_val = _clamp_date(s_val); e_val = _clamp_date(e_val)
+    if e_val < s_val: e_val = s_val
+
+    # ✅ 항상 범위 내 값만 date_input에 전달
     dr = st.date_input(
         "조회 기간",
-        value=(start_val, end_val),
+        value=(s_val, e_val),
         min_value=min_dt,
         max_value=max_dt,
         key="sales_date_input"
     )
+
+    # 사용자가 고른 값 반영 (형/범위 정리)
     if isinstance(dr, (list, tuple)) and len(dr) == 2:
         s, e = dr
     else:
         s = e = dr
-    s = max(min_dt, min(s, max_dt)); e = max(s, min(e, max_dt))
+    # pandas.Timestamp로 넘어온 경우 대비
+    s = pd.to_datetime(s).date(); e = pd.to_datetime(e).date()
+    s = _clamp_date(s); e = _clamp_date(e)
+    if e < s: e = s
     st.session_state["sales_date_range"] = (s, e)
 
-    # 날짜 선택 바로 아래에 붙는 프리셋(달력 밖에서 조작하지만 rerun 없이 자연 반영)
+    # 날짜 아래 프리셋 (rerun 필요 없음)
     try:
-        # Streamlit 1.32+ 권장
         st.segmented_control(
             "",
             options=["최근 1주", "최근 1개월", "이번 달", "지난 달"],
             key="quick_range",
-            on_change=_apply_quick_range
+            on_change=_apply_quick_range,
         )
     except Exception:
-        # 구버전 호환: pills 사용
         st.pills(
             "",
             options=["최근 1주", "최근 1개월", "이번 달", "지난 달"],
             selection_mode="single",
             key="quick_range",
-            on_change=_apply_quick_range
+            on_change=_apply_quick_range,
         )
 
 # ========== AGG ==========

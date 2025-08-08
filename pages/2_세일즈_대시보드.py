@@ -328,8 +328,8 @@ def best_table(platform, df_sold, s, e):
         g = (df_sold.assign(style_key=lambda d: d["product number"].astype(str)
                              .apply(lambda x: style_key_from_label(x, IMG_MAP)))
              .dropna(subset=["style_key"])
-             .groupby("style_key")["quantity shipped"].sum().astype(int).reset_index()
-             .rename(columns={"style_key":"Style Number","quantity shipped":"Sold Qty"}))
+             .groupby("style_key")["quantity shipped"].sum().astype(int).reset_index())
+        g = g.rename(columns={"style_key":"Style Number","quantity shipped":"Sold Qty"})
         g["Image"] = g["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
         return g[["Image","Style Number","Sold Qty"]].sort_values("Sold Qty", ascending=False).head(10)
 
@@ -338,12 +338,12 @@ def best_table(platform, df_sold, s, e):
         g = (tmp.assign(style_key=lambda d: d["product description"].astype(str)
                         .apply(lambda x: style_key_from_label(x, IMG_MAP)))
              .dropna(subset=["style_key"])
-             .groupby("style_key")["qty"].sum().astype(int).reset_index()
-             .rename(columns={"style_key":"Style Number","qty":"Sold Qty"}))
+             .groupby("style_key")["qty"].sum().astype(int).reset_index())
+        g = g.rename(columns={"style_key":"Style Number","qty":"Sold Qty"})
         g["Image"] = g["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
         return g[["Image","Style Number","Sold Qty"]].sort_values("Sold Qty", ascending=False).head(10)
 
-    # BOTH
+    # BOTH: 공통 style_key 기준 합산 + 안전 리네임
     t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)&
                 (df_temu["order item status"].str.lower().isin(["shipped","delivered"]))].copy()
     t["style_key"] = t["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
@@ -358,10 +358,20 @@ def best_table(platform, df_sold, s, e):
 
     mix = pd.DataFrame({"TEMU Qty": t_group, "SHEIN Qty": s_group}).fillna(0).astype(int)
     mix["Sold Qty"] = (mix["TEMU Qty"] + mix["SHEIN Qty"]).astype(int)
-    mix = mix.sort_values("Sold Qty", ascending=False).head(10).reset_index().rename(columns={"index":"Style Number"})
+
+    # 정렬 후 인덱스 리셋
+    mix = mix.sort_values("Sold Qty", ascending=False).head(10).reset_index()
+
+    # ✅ 어떤 이름으로 있든 무조건 Style Number 컬럼을 보장
+    if "index" in mix.columns:
+        mix = mix.rename(columns={"index": "Style Number"})
+    elif "style_key" in mix.columns:
+        mix = mix.rename(columns={"style_key": "Style Number"})
+    elif "Style Number" not in mix.columns:
+        mix["Style Number"] = mix.index.astype(str)
+
     mix["Image"] = mix["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
     return mix[["Image","Style Number","Sold Qty","TEMU Qty","SHEIN Qty"]]
-
 best_df = best_table(platform, df_sold, start, end)
 st.markdown("<div class='cap-card'>", unsafe_allow_html=True)
 st.markdown(best_df.to_html(escape=False, index=False), unsafe_allow_html=True)

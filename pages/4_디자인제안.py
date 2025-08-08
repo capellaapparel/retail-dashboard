@@ -69,21 +69,44 @@ df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 IMG_MAP = dict(zip(df_info.get("product number", pd.Series(dtype=str)).astype(str),
                    df_info.get("image","")))
 
+# 우리가 갖고있는 속성
 ATTR_COLS = ["neckline", "length", "fit", "detail", "style mood"]
 for c in ATTR_COLS:
     if c not in df_info.columns:
         df_info[c] = None
 
 # =========================
-# 사이드바: 수동 시즌/연도 & 기타
+# 사이드바: 시즌/카테고리/목적
 # =========================
 st.sidebar.header("⚙️ 설정")
 platform = st.sidebar.radio("플랫폼", ["TEMU", "SHEIN", "BOTH"], horizontal=True)
 year = st.sidebar.number_input("예측 연도", min_value=2024, max_value=2030, value=2025, step=1)
 season = st.sidebar.selectbox("타깃 시즌", ["Spring","Summer","Fall","Winter"], index=1)
+
+category = st.sidebar.selectbox(
+    "카테고리",
+    [
+        "dress",
+        "pants",
+        "shorts",
+        "sets (top+skirt)",
+        "sets (top+pants/shorts)",
+        "sets (3pcs)",
+        "jumpsuits",
+        "rompers",
+        "top",
+    ],
+    index=0
+)
+
 topN = st.sidebar.slider("분석 상위 스타일 수 (가중치 반영)", 10, 200, 50)
 num_variants = st.sidebar.slider("생성 프롬프트 개수", 1, 6, 3)
-goal = st.sidebar.selectbox("디자인 목적", ["리스크 적고 안전한 변형","트렌드 반영(전진형)","원가절감형(가성비)"], index=0)
+
+goal = st.sidebar.selectbox(
+    "디자인 목적",
+    ["리스크 적고 안전한 변형","트렌드 반영(전진형)","원가절감형(가성비)"],
+    index=0
+)
 
 # =========================
 # 가중치 계산 (전체 데이터 + 시즌 치중)
@@ -108,9 +131,6 @@ def row_weight(order_dt: pd.Timestamp) -> float:
     w_recency = 1.0 if rec <= 18 else 0.7
     return w_season * prev_year_boost * w_recency
 
-# =========================
-# 판매 집계(전체) + 가중치 적용
-# =========================
 def build_weighted_sales():
     frames=[]
     if platform in ["TEMU","BOTH"]:
@@ -145,7 +165,6 @@ info.rename(columns={"product number":"style"}, inplace=True)
 info["style"] = info["style"].astype(str)
 top_df = info[info["style"].isin(top_styles)].copy()
 
-# 스타일별 가중치
 style_w = dict(zip(w_sales["style"].astype(str), w_sales["wqty"]))
 
 # =========================
@@ -185,7 +204,6 @@ adj_attrs = adjust_attrs_for_season(dominant, season)
 def forecast_trends(year:int, season:str, attr_counts:dict) -> list[str]:
     s = season.lower()
     bullets = []
-    # 내부 데이터 상위 신호
     top_attr_lines = []
     for col in ["fit","length","neckline","detail","style mood"]:
         if attr_counts.get(col) and len(attr_counts[col])>0:
@@ -193,15 +211,14 @@ def forecast_trends(year:int, season:str, attr_counts:dict) -> list[str]:
             top_attr_lines.append(f"{col}: `{v}` 상향")
     if top_attr_lines:
         bullets.append(f"{year} {season} 예측(내부 데이터 가중): " + "; ".join(top_attr_lines[:3]))
-    # 휴리스틱
     if s == "summer":
         bullets += [
-            f"{year} {season} 예측: 경량 소재감·절제된 슬릿/컷아웃, 저채도 솔리드/톤온톤",
+            f"{year} {season} 예측: 경량감·절제된 슬릿/컷아웃, 저채도 솔리드/톤온톤",
             f"{year} {season} 예측: 슬림 핏 미디~맥시, 실용 디테일(포켓) 유지",
         ]
     elif s == "spring":
         bullets += [
-            f"{year} {season} 예측: 소프트 파스텔·아이시 뉴트럴, 셔링/드레이핑 완만한 증가",
+            f"{year} {season} 예측: 파스텔/아이시 뉴트럴, 셔링/드레이핑 완만한 증가",
             f"{year} {season} 예측: 미디 길이 레귤러~슬림, 미니멀 하드웨어",
         ]
     elif s == "fall":
@@ -209,7 +226,7 @@ def forecast_trends(year:int, season:str, attr_counts:dict) -> list[str]:
             f"{year} {season} 예측: 니트/저지 드레스 확대, 세미핏·릴랙스드",
             f"{year} {season} 예측: 톤다운 뉴트럴, 텍스처(립/핀턱) 포인트",
         ]
-    else:  # winter
+    else:
         bullets += [
             f"{year} {season} 예측: 하이넥/목선 커버·롱 슬리브 전환",
             f"{year} {season} 예측: 맥시 길이 선호·실용 디테일(패치 포켓 등)",
@@ -221,7 +238,7 @@ def forecast_trends(year:int, season:str, attr_counts:dict) -> list[str]:
 trend_bullets = forecast_trends(year, season, attr_counts)
 
 # =========================
-# 레퍼런스 이미지 (상위 6)
+# 레퍼런스 이미지
 # =========================
 ref_urls = []
 top_styles_sorted = w_sales.sort_values("wqty", ascending=False)["style"].astype(str)
@@ -231,66 +248,111 @@ for sid in top_styles_sorted.head(6):
         ref_urls.append(u)
 
 # =========================
-# 프롬프트 생성 + ChatGPT 실행 링크
+# 목적별 톤 차별화 + 카테고리 템플릿
 # =========================
-def make_prompt(attrs:dict, season:str, variant:int, refs:list, goal:str):
-    goal_hint = {
-        "리스크 적고 안전한 변형": "commercial, mass-market ready, minimal risky details",
-        "트렌드 반영(전진형)": "trend-forward, subtle editorial touch",
-        "원가절감형(가성비)": "cost-effective construction, simplified detail",
-    }[goal]
+SAFE_TONE = (
+    "commercial, mass‑market ready, conservative coverage, no risky cutouts, "
+    "clean construction, minimal hardware, safe palette."
+)
+TREND_TONE = (
+    "trend‑forward with controlled experimentation: subtle asymmetry or drape, "
+    "light shirring/pleats, localized texture contrast, optional color pop accent, "
+    "still mass‑market safe."
+)
+COST_TONE = (
+    "cost‑effective construction: simplified panels, reduced seams and hardware, "
+    "efficient fabric usage, maintain commercial appeal."
+)
 
-    # ✅ 이미지 강제 지시 헤더 (가장 앞에 둬야 함)
-    image_header = (
-        "CREATE EXACTLY ONE IMAGE.\n"
-        "Use the image-generation tool to render a single **photo‑realistic** studio product image.\n"
-        "Canvas: 1024x1536 (vertical), PNG. Plain flat background, even soft lighting.\n"
-        "Do not write any text or captions in your response—**return the image only**.\n"
-    )
+def goal_tone(goal:str)->str:
+    return {"리스크 적고 안전한 변형": SAFE_TONE,
+            "트렌드 반영(전진형)": TREND_TONE,
+            "원가절감형(가성비)": COST_TONE}[goal]
 
-    parts = [image_header]
+def category_sentence(category:str, attrs:dict, season:str)->str:
+    fit  = attrs.get("fit","-")
+    leng = attrs.get("length","-")
+    neck = attrs.get("neckline","-")
+    det  = attrs.get("detail","-")
+    mood = attrs.get("style mood","-")
 
+    s = season.lower()
+    parts = []
+
+    if category == "dress":
+        base = f"Design a {s} {fit} {leng} dress"
+        if _clean(neck): base += f" with {neck} neckline"
+        parts.append(base)
+    elif category == "top":
+        base = f"Design a {s} {fit} top"
+        if _clean(neck): base += f" with {neck} neckline"
+        parts.append(base)
+    elif category == "pants":
+        parts.append(f"Design {s} {fit} pants, ankle to full length")
+    elif category == "shorts":
+        parts.append(f"Design {s} {fit} shorts, mid to high rise")
+    elif category == "jumpsuits":
+        base = f"Design a {s} {fit} {leng} jumpsuit"
+        if _clean(neck): base += f" with {neck} neckline"
+        parts.append(base)
+    elif category == "rompers":
+        base = f"Design a {s} {fit} {leng} romper"
+        if _clean(neck): base += f" with {neck} neckline"
+        parts.append(base)
+    elif category == "sets (top+skirt)":
+        top_line   = f"a {fit} top" + (f" with {neck} neckline" if _clean(neck) else "")
+        skirt_line = f"a {fit} {leng} skirt"
+        parts.append(f"Design a {s} two‑piece set: {top_line} paired with {skirt_line}. Ensure modest overlap (no bare midriff).")
+    elif category == "sets (top+pants/shorts)":
+        top_line = f"a {fit} top" + (f" with {neck} neckline" if _clean(neck) else "")
+        bottom   = "pants" if ("winter" in s or "fall" in s) else "shorts"
+        parts.append(f"Design a {s} two‑piece set: {top_line} paired with {fit} {bottom}.")
+    elif category == "sets (3pcs)":
+        top_line = f"a {fit} top" + (f" with {neck} neckline" if _clean(neck) else "")
+        third    = "light jacket" if s in ["spring","fall"] else ("cardigan" if s=="winter" else "shirt overlay")
+        bottom   = "pants" if s in ["fall","winter"] else "skirt"
+        parts.append(f"Design a {s} three‑piece set: {top_line}, {fit} {bottom}, and a {third}.")
+
+    if _clean(det):
+        parts.append(f"Detail: {det}.")
+    if _clean(mood):
+        parts.append(f"Style mood: {mood}.")
+    return " ".join(parts)
+
+# 이미지 강제 지시 헤더(텍스트 답변 방지)
+IMAGE_HEADER = (
+    "CREATE EXACTLY ONE IMAGE.\n"
+    "Use the image-generation tool to render a single photo‑realistic studio product image.\n"
+    "Canvas: 1024x1536 (vertical), PNG. Plain flat background, even soft lighting.\n"
+    "Do not write any text or captions—return the image only.\n"
+    "Model‑free mannequin or clean flat‑lay. Garment centered, full‑length. No hands, props, or overlays.\n"
+)
+
+def make_prompt(attrs:dict, season:str, variant:int, refs:list, goal:str, category:str):
+    parts = [IMAGE_HEADER]
     if refs:
         parts.append("Inspirations: " + ", ".join(refs[:4]) + ". ")
-
-    desc = f"Design a {season.lower()} {attrs.get('fit','-')} {attrs.get('length','-')} dress"
-    if attrs.get("neckline") and str(attrs["neckline"]).strip() not in ["-","nan","none",""]:
-        desc += f" with {attrs['neckline']} neckline"
-    if attrs.get("detail") and str(attrs["detail"]).strip() not in ["-","nan","none",""]:
-        desc += f", detail: {attrs['detail']}"
-    if attrs.get("style mood") and str(attrs["style mood"]).strip() not in ["-","nan","none",""]:
-        desc += f", style mood: {attrs['style mood']}"
-    desc += ". "
-
-    parts.append(desc)
-
-    # 제품 촬영 가이드 (이미지용)
-    parts.append(
-        "Model-free mannequin or clean flat-lay look. Garment centered, full-length in frame. "
-        "No extra props, no hands, no text overlays. Fabric grain and seams visible.\n"
-    )
-
-    # 목적/리스크
-    parts.append(goal_hint + ". ")
-
+    parts.append(category_sentence(category, attrs, season) + " ")
+    parts.append("Fabric grain and seams visible. ")
+    parts.append(goal_tone(goal) + " ")
     parts.append(f"Variant #{variant}.")
     return "".join(parts)
 
 def chatgpt_link(prompt: str) -> str:
-    # gpt-4o는 DALL·E 호출 가능한 이미지 모드. input에 프롬프트 사전입력.
     return f"[🖼️ ChatGPT에서 이미지 생성하기](https://chat.openai.com/?model=gpt-4o&input={quote(prompt)})"
 
-prompts = [make_prompt(adj_attrs, season, i+1, ref_urls, goal) for i in range(num_variants)]
+prompts = [make_prompt(adj_attrs, season, i+1, ref_urls, goal, category) for i in range(num_variants)]
 
 # =========================
 # 출력
 # =========================
-left, right = st.columns([1.7, 1.3])
+left, right = st.columns([1.65, 1.35])
 
 with left:
     st.subheader("📄 디자인 브리프")
     st.markdown(f"- 플랫폼: **{platform}**")
     st.markdown(f"- 타깃 시즌/연도: **{season} {year}**")
+    st.markdown(f"- 카테고리: **{category}**")
     st.markdown("**핵심 속성(시즌 보정 반영):**")
     st.markdown(f"""
 - neckline: **{adj_attrs.get('neckline','-')}**
@@ -305,7 +367,7 @@ with left:
         st.markdown(f"- {b}")
 
     st.subheader("🎯 생성 프롬프트 (이미지 모델용)")
-    st.caption("👇 클릭하면 **ChatGPT(DALL·E 3)** 가 열리고 프롬프트가 자동 입력됩니다. (Midjourney/Firefly/Leonardo는 텍스트만 복사하여 사용)")
+    st.caption("👇 **클릭하면 ChatGPT(DALL·E 3)** 가 열리고 프롬프트가 자동 입력됩니다. (다른 이미지툴은 텍스트를 복사해 사용)")
     for i, p in enumerate(prompts, 1):
         st.markdown(f"**Prompt {i}**")
         st.code(p)

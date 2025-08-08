@@ -31,7 +31,7 @@ def load_google_sheet(sheet_name: str) -> pd.DataFrame:
     return df
 
 def parse_temudate(x):
-    # 예: "Aug 3, 2025, 7:15 pm PDT(UTC-7)" → 타임존 괄호 앞까지만 파싱
+    # 예: "Aug 3, 2025, 7:15 pm PDT(UTC-7)" → 괄호 앞까지만 파싱
     s = str(x)
     if "(" in s:
         s = s.split("(")[0].strip()
@@ -67,7 +67,8 @@ def _safe_minmax(*series):
     s = pd.concat([pd.to_datetime(x, errors="coerce") for x in series], ignore_index=True)
     s = s.dropna()
     if s.empty:
-        today = pd.Timestamp.today().normalize().date()
+        today_ts = pd.Timestamp.today().normalize()
+        today = today_ts.date()
         return today, today
     return s.min().date(), s.max().date()
 
@@ -93,9 +94,12 @@ info_img = dict(zip(df_info["product number"].astype(str), df_info["image"]))
 
 # ---------- Date widget (안전하게) ----------
 min_dt, max_dt = _safe_minmax(df_temu["order date"], df_shein["order date"])
-today = pd.Timestamp.today().normalize().date()
-default_start = max(min_dt, (today - pd.Timedelta(days=6)).date())
-default_end   = min(max_dt, today)
+
+# 오늘을 Timestamp로 유지 → 계산 후 .date()만 사용
+today_ts = pd.Timestamp.today().normalize()
+today_d  = today_ts.date()
+default_start = max(min_dt, (today_ts - pd.Timedelta(days=6)).date())
+default_end   = min(max_dt, today_d)
 
 if "sales_date_range" not in st.session_state:
     st.session_state["sales_date_range"] = (default_start, default_end)
@@ -117,7 +121,7 @@ with col_right:
         max_value=max_dt,
         key="sales_date_input"
     )
-    if isinstance(dr, tuple) and len(dr) == 2:
+    if isinstance(dr, (list, tuple)) and len(dr) == 2:
         start_date, end_date = dr
     else:
         start_date = end_date = dr
@@ -137,25 +141,28 @@ prev_end    = start - pd.Timedelta(seconds=1)
 def temu_agg(df, s, e):
     mask = (df["order date"] >= s) & (df["order date"] <= e)
     d = df[mask].copy()
-    sold = d[d["order item status"].str.lower().isin(["shipped", "delivered"])]
+    status = d["order item status"].astype(str).str.lower()
+    sold = d[status.isin(["shipped", "delivered"])]
 
     qty_sum   = sold["quantity shipped"].sum()
-    sales_sum = sold["base price total"].sum()      # ← 금액 합계
+    sales_sum = sold["base price total"].sum()      # 금액 합계
     aov       = (sales_sum / qty_sum) if qty_sum > 0 else 0.0
 
     # 취소는 purchased 기준
-    cancel_qty = d[d["order item status"].str.lower().eq("canceled")]["quantity purchased"].sum()
+    cancel_qty = d[status.eq("canceled")]["quantity purchased"].sum()
     return sales_sum, qty_sum, aov, cancel_qty, sold
 
 def shein_agg(df, s, e):
     mask = (df["order date"] >= s) & (df["order date"] <= e)
     d = df[mask].copy()
-    sold = d[~d["order status"].str.lower().isin(["customer refunded"])]
+    status = d["order status"].astype(str).str.lower()
+
+    sold = d[~status.isin(["customer refunded"])]
 
     qty_sum   = len(sold)  # 한 행 = 1
     sales_sum = sold["product price"].sum()
     aov       = (sales_sum / qty_sum) if qty_sum > 0 else 0.0
-    cancel_qty = (d["order status"].str.lower() == "customer refunded").sum()
+    cancel_qty = status.eq("customer refunded").sum()
     return sales_sum, qty_sum, aov, cancel_qty, sold
 
 if platform == "TEMU":
@@ -210,9 +217,9 @@ elif platform == "SHEIN":
     )
 else:
     t = df_temu[(df_temu["order date"] >= start) & (df_temu["order date"] <= end)]
-    t = t[t["order item status"].str.lower().isin(["shipped", "delivered"])].copy()
+    t = t[t["order item status"].astype(str).str.lower().isin(["shipped", "delivered"])].copy()
     s = df_shein[(df_shein["order date"] >= start) & (df_shein["order date"] <= end)]
-    s = s[~s["order status"].str.lower().isin(["customer refunded"])].copy()
+    s = s[~s["order status"].astype(str).str.lower().isin(["customer refunded"])].copy()
     s["qty"] = 1
 
     t_daily = t.groupby(pd.Grouper(key="order date", freq="D")).agg(
@@ -262,10 +269,10 @@ elif platform == "SHEIN":
 
 else:
     t = df_temu[(df_temu["order date"] >= start) & (df_temu["order date"] <= end)]
-    t = t[t["order item status"].str.lower().isin(["shipped", "delivered"])]
+    t = t[t["order item status"].astype(str).str.lower().isin(["shipped", "delivered"])]
     t_cnt = t.groupby("product number")["quantity shipped"].sum()
     s = df_shein[(df_shein["order date"] >= start) & (df_shein["order date"] <= end)]
-    s = s[~s["order status"].str.lower().isin(["customer refunded"])]
+    s = s[~s["order status"].astype(str).str.lower().isin(["customer refunded"])]
     s_cnt = s.groupby("product description").size()
 
     summary = pd.DataFrame({"TEMU Qty": t_cnt, "SHEIN Qty": s_cnt}).fillna(0.0)

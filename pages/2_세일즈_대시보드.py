@@ -244,17 +244,17 @@ else:
     p_sold = pd.concat([d1p, d2p], ignore_index=True)
 
 # =========================
-# 5) KPI (native metric inside card → HTML 꼬임 방지)
+# 5) KPI (네이티브 컨테이너로 박스 보장)
 # =========================
-with st.container():
-    st.markdown("<div class='cap-card'>", unsafe_allow_html=True)
+def _delta_str(now, prev):
+    if prev in (0, None) or pd.isna(prev): return "—"
+    pct = (now - prev) / prev * 100
+    sign = "+" if pct >= 0 else ""
+    return f"{sign}{pct:.1f}%"
+
+st.subheader("")  # 상단 여백용(있어도/없어도 됨)
+with st.container(border=True):
     cols = st.columns(4, gap="small")
-    # delta 계산
-    def _delta_str(now, prev):
-        if prev in (0, None) or pd.isna(prev): return "—"
-        pct = (now - prev) / prev * 100
-        sign = "+" if pct >= 0 else ""
-        return f"{sign}{pct:.1f}%"
     with cols[0]:
         st.metric("Total Order Amount", f"${sales_sum:,.2f}", _delta_str(sales_sum, psales))
     with cols[1]:
@@ -263,59 +263,68 @@ with st.container():
         st.metric("AOV", f"${aov:,.2f}", _delta_str(aov, paov))
     with cols[3]:
         st.metric("Canceled Order", f"{int(cancel_qty):,}", _delta_str(cancel_qty, pcancel))
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # =========================
-# 6) Insights
 # =========================
+# 6) Insights (풍성하게)
+# =========================
+def _pc(cur, prev):
+    if prev in (0, None) or pd.isna(prev): return None
+    return (cur - prev) / prev * 100.0
+
+# Top10 비교
 def get_bestseller_labels(platform, df_sold, s, e):
     if platform == "TEMU":
         best = df_sold.groupby("product number")["quantity shipped"].sum().sort_values(ascending=False).head(10)
-        return list(best.index.astype(str)), best
+        return list(best.index.astype(str))
     elif platform == "SHEIN":
         tmp = df_sold.copy(); tmp["qty"] = 1
         best = tmp.groupby("product description")["qty"].sum().sort_values(ascending=False).head(10)
-        return list(best.index.astype(str)), best
+        return list(best.index.astype(str))
     else:
         t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
         t = t[t["order item status"].str.lower().isin(["shipped","delivered"])].copy()
         t["style_key"] = t["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
         t = t.dropna(subset=["style_key"])
-        t_cnt = t.groupby("style_key")["quantity shipped"].sum().astype(int)
+        t_cnt = t.groupby("style_key")["quantity shipped"].sum()
 
         s2 = df_shein[(df_shein["order date"]>=s)&(df_shein["order date"]<=e)]
         s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])].copy()
         s2["style_key"] = s2["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
         s2 = s2.dropna(subset=["style_key"])
-        s_cnt = s2.groupby("style_key").size().astype(int)
+        s_cnt = s2.groupby("style_key").size()
 
-        mix = pd.DataFrame({"TEMU Qty": t_cnt, "SHEIN Qty": s_cnt}).fillna(0).astype(int)
-        mix["Sold Qty"] = (mix["TEMU Qty"] + mix["SHEIN Qty"]).astype(int)
-        best = mix["Sold Qty"].sort_values(ascending=False).head(10)
-        return list(best.index.astype(str)), best
+        mix = (pd.DataFrame({"t":t_cnt, "s":s_cnt}).fillna(0))
+        mix["tot"] = mix["t"] + mix["s"]
+        return list(mix["tot"].sort_values(ascending=False).head(10).index.astype(str))
 
-def build_insights():
-    bullets = []
-    cur_top, _ = get_bestseller_labels(platform, df_sold, start, end)
-    prev_top, _ = get_bestseller_labels(platform, p_sold, prev_start, prev_end) if 'p_sold' in locals() else ([], [])
-    entered = [x for x in cur_top if x not in prev_top]
-    dropped = [x for x in prev_top if x not in cur_top]
-    if entered:
-        bullets.append(f"✅ Top10 **신규 진입**: {', '.join(entered)} → 재고 확보/광고 확대 권장.")
-    if dropped:
-        bullets.append(f"⚠️ Top10 **이탈**: {', '.join(dropped)} → 인벤토리/가격/노출 점검.")
-    bullets.append("🧭 체크리스트: 쿠폰/프로모션, 상위 상품 재고(핵심 사이즈), 경쟁가/리뷰, 이미지/타이틀.")
-    return bullets
+cur_top = get_bestseller_labels(platform, df_sold, start, end)
+prev_top = get_bestseller_labels(platform, p_sold, prev_start, prev_end) if 'p_sold' in locals() else []
+entered = [x for x in cur_top if x not in prev_top]
+dropped = [x for x in prev_top if x not in cur_top]
 
-insight_items = "".join([f"<li>{b}</li>" for b in build_insights()])
-st.markdown(f"""
-<div class='cap-card'>
-  <div class='insight-title'>자동 인사이트 & 액션 제안</div>
-  <ul class='insight-list'>
-    {insight_items}
-  </ul>
-</div>
-""", unsafe_allow_html=True)
+bullets = []
+for label, now, prev in [
+    ("매출액", sales_sum, psales),
+    ("판매수량", qty_sum, pqty),
+    ("AOV", aov, paov),
+    ("취소건", cancel_qty, pcancel),
+]:
+    v = _pc(now, prev)
+    if v is not None:
+        dir_ = "증가" if v >= 0 else "감소"
+        bullets.append(f"• {label} **{dir_} {abs(v):.1f}%**")
+
+if entered:
+    bullets.append(f"• Top10 **신규 진입**: {', '.join(entered)} → 재고 확보/광고 확대 권장")
+if dropped:
+    bullets.append(f"• Top10 **이탈**: {', '.join(dropped)} → 인벤토리/가격/노출 점검")
+
+bullets.append("• 체크리스트: 쿠폰/프로모션, 상위 상품 재고(핵심 사이즈), 경쟁가/리뷰, 이미지/타이틀")
+
+with st.container(border=True):
+    st.markdown("**자동 인사이트 & 액션 제안**")
+    st.markdown("\n".join([f"- {b}" for b in bullets]))
 
 # =========================
 # 7) Daily Chart
@@ -361,9 +370,9 @@ else:
     _ = box.line_chart(_daily[["Total_Sales","qty"]])
 
 # =========================
-# 8) Best Seller (full-width card)
+# 8) Best Seller 10
 # =========================
-st.markdown("<div class='block-title'>Best Seller 10</div>", unsafe_allow_html=True)
+st.subheader("Best Seller 10")
 
 def best_table(platform, df_sold, s, e):
     if platform == "TEMU":
@@ -401,18 +410,14 @@ def best_table(platform, df_sold, s, e):
     mix = pd.DataFrame({"TEMU Qty": t_group, "SHEIN Qty": s_group}).fillna(0).astype(int)
     mix["Sold Qty"] = (mix["TEMU Qty"] + mix["SHEIN Qty"]).astype(int)
     mix = mix.sort_values("Sold Qty", ascending=False).head(10).reset_index()
-
-    if "index" in mix.columns:
-        mix = mix.rename(columns={"index": "Style Number"})
-    elif "style_key" in mix.columns:
-        mix = mix.rename(columns={"style_key": "Style Number"})
-    elif "Style Number" not in mix.columns:
-        mix["Style Number"] = mix.index.astype(str)
-
+    if "index" in mix.columns: mix = mix.rename(columns={"index":"Style Number"})
+    elif "style_key" in mix.columns: mix = mix.rename(columns={"style_key":"Style Number"})
+    elif "Style Number" not in mix.columns: mix["Style Number"] = mix.index.astype(str)
     mix["Image"] = mix["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
     return mix[["Image","Style Number","Sold Qty","TEMU Qty","SHEIN Qty"]]
 
 best_df = best_table(platform, df_sold, start, end)
-st.markdown("<div class='cap-card best-card'><div class='table-wrap'>", unsafe_allow_html=True)
-st.markdown(best_df.to_html(escape=False, index=False), unsafe_allow_html=True)
-st.markdown("</div></div>", unsafe_allow_html=True)
+
+# ✅ 불필요한 HTML 래퍼 제거 → 빈 네모 사라짐
+with st.container(border=True):
+    st.markdown(best_df.to_html(escape=False, index=False), unsafe_allow_html=True)

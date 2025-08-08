@@ -12,38 +12,43 @@ st.title("세일즈 대시보드")
 
 st.markdown("""
 <style>
+/* 공통 카드 */
 .cap-card { border:1px solid #e9e9ef; border-radius:12px; padding:16px; background:#fff; }
-.cap-card + .cap-card { margin-top:12px; }
-.kpi-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:16px; }
-.kpi-item { border:1px solid #f0f0f5; border-radius:12px; padding:14px; background:#fff; }
-.kpi-title { font-size:0.9rem; color:#60606a; }
-.kpi-value { font-size:1.4rem; font-weight:700; margin-top:4px; }
-.kpi-delta { font-size:0.85rem; margin-top:2px; }
+.cap-card + .cap-card { margin-top:14px; }
+
+/* KPI 그리드 */
+.kpi-grid { display:grid; grid-template-columns: repeat(4, minmax(240px, 1fr)); gap:16px; }
+.kpi-item { border:1px solid #f0f0f5; border-radius:12px; padding:16px; background:#fff; }
+.kpi-title { font-size:0.92rem; color:#61616b; }
+.kpi-value { font-size:1.5rem; font-weight:700; margin-top:6px; }
+.kpi-delta { font-size:0.86rem; margin-top:4px; }
+
+/* 인사이트 */
 .insight-title { font-weight:700; margin-bottom:8px; font-size:1.05rem; }
 .insight-list { margin:0; padding-left:18px; }
 .insight-list li { margin:4px 0; line-height:1.45; }
-img.thumb { width:60px; height:auto; border-radius:10px; }
+
+/* 섹션 제목 */
 .block-title { margin:18px 0 8px 0; font-weight:700; font-size:1.05rem; }
-/* Best Seller 테이블을 가로 100%로, 칸 넓게 */
+
+/* Best Seller 테이블 크게 */
 .best-card .table-wrap { width:100%; }
 .best-card table { width:100% !important; table-layout:fixed; border-collapse:separate; border-spacing:0; }
-.best-card th, .best-card td { padding:12px 14px; font-size:0.95rem; }
+.best-card th, .best-card td { padding:12px 14px; font-size:0.96rem; }
 .best-card th { background:#fafafa; }
 .best-card td { vertical-align:middle; }
-
-/* 컬럼 별 폭 (1:이미지, 2:스타일, 나머지 숫자 컬럼) */
 .best-card table thead th:nth-child(1),
-.best-card table tbody td:nth-child(1) { width:110px; }
+.best-card table tbody td:nth-child(1) { width:120px; }
 .best-card table thead th:nth-child(2),
 .best-card table tbody td:nth-child(2) { width:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .best-card table thead th:nth-child(n+3),
 .best-card table tbody td:nth-child(n+3) { width:120px; text-align:right; }
 
-/* 이미지 조금 키우기 */
-img.thumb { width:80px; height:auto; border-radius:10px; }
+/* 상품 이미지 확대 */
+img.thumb { width:84px; height:auto; border-radius:10px; }
 
-/* 카드 자체도 여백 조금 더 */
-.best-card.cap-card { padding:18px; }
+/* 위쪽 KPI/인사이트가 공간을 많이 먹지 않게 */
+.shrink-top .kpi-value { font-size:1.35rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -93,7 +98,6 @@ def kpi_delta_html(cur, prev):
     color = "#11b500" if pct >= 0 else "red"
     return f"<span class='kpi-delta' style='color:{color}'>{arrow} {abs(pct):.1f}%</span>"
 
-# 스타일 추출 & 이미지 매핑
 STYLE_RE = re.compile(r"\b([A-Z]{1,3}\d{3,5}[A-Z0-9]?)\b")
 
 def build_img_map(df_info: pd.DataFrame):
@@ -123,7 +127,7 @@ df_shein = load_google_sheet("SHEIN_SALES")
 df_info  = load_google_sheet("PRODUCT_INFO")
 IMG_MAP = build_img_map(df_info)
 
-# Normalize dates / columns
+# Normalize
 df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
 df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 
@@ -136,7 +140,7 @@ df_shein["order status"] = df_shein["order status"].astype(str)
 df_shein["product price"] = clean_money(df_shein["product price"])
 
 # =========================
-# 2) Controls (platform + date with presets)
+# 2) Controls
 # =========================
 min_dt, max_dt = _safe_minmax(df_temu["order date"], df_shein["order date"])
 today_ts = pd.Timestamp.today().normalize()
@@ -164,8 +168,7 @@ def _apply_quick_range():
     elif label == "이번 달":
         s = today_ts.replace(day=1).date(); e = today_d
     elif label == "지난 달":
-        first_this = today_ts.replace(day=1)
-        last_end   = first_this - pd.Timedelta(days=1)
+        first_this = today_ts.replace(day=1); last_end = first_this - pd.Timedelta(days=1)
         s = last_end.replace(day=1).date(); e = last_end.date()
     else:
         return
@@ -195,24 +198,14 @@ with c2:
     if e < s: e = s
     st.session_state["sales_date_range"] = (s, e)
 
-    # 날짜 아래 프리셋
     try:
-        st.segmented_control(
-            "",
-            options=["최근 1주", "최근 1개월", "이번 달", "지난 달"],
-            key="quick_range",
-            on_change=_apply_quick_range,
-        )
+        st.segmented_control("", ["최근 1주", "최근 1개월", "이번 달", "지난 달"],
+                             key="quick_range", on_change=_apply_quick_range)
     except Exception:
-        st.pills(
-            "",
-            options=["최근 1주", "최근 1개월", "이번 달", "지난 달"],
-            selection_mode="single",
-            key="quick_range",
-            on_change=_apply_quick_range,
-        )
+        st.pills("", ["최근 1주", "최근 1개월", "이번 달", "지난 달"],
+                 selection_mode="single", key="quick_range", on_change=_apply_quick_range)
 
-# 최종 시간 범위
+# 최종 범위
 start = pd.to_datetime(st.session_state["sales_date_range"][0])
 end   = pd.to_datetime(st.session_state["sales_date_range"][1]) + pd.Timedelta(hours=23, minutes=59, seconds=59)
 period_days = (end - start).days + 1
@@ -242,6 +235,121 @@ def shein_agg(df, s, e):
     cancel_qty = stt.eq("customer refunded").sum()
     return sales_sum, qty_sum, aov, cancel_qty, sold
 
+# =========================
+# 4) Current vs Prev
+# =========================
+if platform == "TEMU":
+    sales_sum, qty_sum, aov, cancel_qty, df_sold = temu_agg(df_temu, start, end)
+    psales, pqty, paov, pcancel, p_sold = temu_agg(df_temu, prev_start, prev_end)
+elif platform == "SHEIN":
+    sales_sum, qty_sum, aov, cancel_qty, df_sold = shein_agg(df_shein, start, end)
+    psales, pqty, paov, pcancel, p_sold = shein_agg(df_shein, prev_start, prev_end)
+else:
+    s1, q1, a1, c1, d1 = temu_agg(df_temu, start, end)
+    s2, q2, a2, c2, d2 = shein_agg(df_shein, start, end)
+    sales_sum, qty_sum, cancel_qty = s1 + s2, q1 + q2, c1 + c2
+    aov = sales_sum / qty_sum if qty_sum > 0 else 0.0
+    df_sold = pd.concat([d1, d2], ignore_index=True)
+
+    ps1, pq1, pa1, pc1, d1p = temu_agg(df_temu, prev_start, prev_end)
+    ps2, pq2, pa2, pc2, d2p = shein_agg(df_shein, prev_start, prev_end)
+    psales, pqty, pcancel = ps1 + ps2, pq1 + pq2, pc1 + pc2
+    paov = psales / pqty if pqty > 0 else 0.0
+    p_sold = pd.concat([d1p, d2p], ignore_index=True)
+
+# =========================
+# 5) KPI (compact)
+# =========================
+kpi_html = f"""
+<div class='cap-card shrink-top'>
+  <div class='kpi-grid'>
+    <div class='kpi-item'>
+      <div class='kpi-title'>Total Order Amount</div>
+      <div class='kpi-value'>${sales_sum:,.2f}</div>
+      {kpi_delta_html(sales_sum, psales)}
+    </div>
+    <div class='kpi-item'>
+      <div class='kpi-title'>Total Order Quantity</div>
+      <div class='kpi-value'>{int(qty_sum):,}</div>
+      {kpi_delta_html(qty_sum, pqty)}
+    </div>
+    <div class='kpi-item'>
+      <div class='kpi-title'>AOV</div>
+      <div class='kpi-value'>${aov:,.2f}</div>
+      {kpi_delta_html(aov, paov)}
+    </div>
+    <div class='kpi-item'>
+      <div class='kpi-title'>Canceled Order</div>
+      <div class='kpi-value'>{int(cancel_qty):,}</div>
+      {kpi_delta_html(cancel_qty, pcancel)}
+    </div>
+  </div>
+</div>
+"""
+st.markdown(kpi_html, unsafe_allow_html=True)
+
+# =========================
+# 6) Insights
+# =========================
+def pct_change(cur, prev):
+    if prev in (0, None) or pd.isna(prev): return None
+    return (cur - prev) / prev * 100.0
+
+def get_bestseller_labels(platform, df_sold, s, e):
+    if platform == "TEMU":
+        best = df_sold.groupby("product number")["quantity shipped"].sum().sort_values(ascending=False).head(10)
+        return list(best.index.astype(str)), best
+    elif platform == "SHEIN":
+        tmp = df_sold.copy(); tmp["qty"] = 1
+        best = tmp.groupby("product description")["qty"].sum().sort_values(ascending=False).head(10)
+        return list(best.index.astype(str)), best
+    else:
+        t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
+        t = t[t["order item status"].str.lower().isin(["shipped","delivered"])].copy()
+        t["style_key"] = t["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
+        t = t.dropna(subset=["style_key"])
+        t_cnt = t.groupby("style_key")["quantity shipped"].sum().astype(int)
+
+        s2 = df_shein[(df_shein["order date"]>=s)&(df_shein["order date"]<=e)]
+        s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])].copy()
+        s2["style_key"] = s2["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
+        s2 = s2.dropna(subset=["style_key"])
+        s_cnt = s2.groupby("style_key").size().astype(int)
+
+        mix = pd.DataFrame({"TEMU Qty": t_cnt, "SHEIN Qty": s_cnt}).fillna(0).astype(int)
+        mix["Sold Qty"] = (mix["TEMU Qty"] + mix["SHEIN Qty"]).astype(int)
+        best = mix["Sold Qty"].sort_values(ascending=False).head(10)
+        return list(best.index.astype(str)), best
+
+def build_insights():
+    bullets = []
+    ac = pct_change(aov, paov)
+    cur_top, _ = get_bestseller_labels(platform, df_sold, start, end)
+    prev_top, _ = get_bestseller_labels(platform, p_sold, prev_start, prev_end) if 'p_sold' in locals() else ([], [])
+    entered = [x for x in cur_top if x not in prev_top]
+    dropped = [x for x in prev_top if x not in cur_top]
+    if ac is not None and abs(ac) >= 5:
+        bullets.append(f"ℹ️ AOV가 **{'하락' if ac<0 else '상승'} {abs(ac):.1f}%** 변했습니다.")
+    if entered:
+        bullets.append(f"✅ Top10 **신규 진입**: {', '.join(entered)} → 재고 확보/광고 확대 권장.")
+    if dropped:
+        bullets.append(f"⚠️ Top10 **이탈**: {', '.join(dropped)} → 인벤토리/가격/노출 점검.")
+    bullets.append("🧭 체크리스트: 쿠폰/프로모션, 상위 상품 재고(핵심 사이즈), 경쟁가/리뷰, 이미지/타이틀.")
+    return bullets
+
+insight_items = "".join([f"<li>{b}</li>" for b in build_insights()])
+st.markdown(f"""
+<div class='cap-card'>
+  <div class='insight-title'>자동 인사이트 & 액션 제안</div>
+  <ul class='insight-list'>
+    {insight_items}
+  </ul>
+</div>
+""", unsafe_allow_html=True)
+
+# =========================
+# 7) Daily Chart
+# =========================
 def build_daily(platform: str, s: pd.Timestamp, e: pd.Timestamp) -> pd.DataFrame:
     if platform == "TEMU":
         t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
@@ -274,131 +382,16 @@ def build_daily(platform: str, s: pd.Timestamp, e: pd.Timestamp) -> pd.DataFrame
         daily = daily[["qty","Total_Sales"]]
     return daily.reset_index().set_index("order date").fillna(0.0)
 
-def get_bestseller_labels(platform, df_sold, s, e):
-    if platform == "TEMU":
-        best = df_sold.groupby("product number")["quantity shipped"].sum().sort_values(ascending=False).head(10)
-        return list(best.index.astype(str)), best
-    elif platform == "SHEIN":
-        tmp = df_sold.copy(); tmp["qty"] = 1
-        best = tmp.groupby("product description")["qty"].sum().sort_values(ascending=False).head(10)
-        return list(best.index.astype(str)), best
-    else:
-        # 스타일키 기준
-        t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
-        t = t[t["order item status"].str.lower().isin(["shipped","delivered"])].copy()
-        t["style_key"] = t["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
-        t = t.dropna(subset=["style_key"])
-        t_cnt = t.groupby("style_key")["quantity shipped"].sum().astype(int)
-
-        s2 = df_shein[(df_shein["order date"]>=s)&(df_shein["order date"]<=e)]
-        s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])].copy()
-        s2["style_key"] = s2["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
-        s2 = s2.dropna(subset=["style_key"])
-        s_cnt = s2.groupby("style_key").size().astype(int)
-
-        mix = pd.DataFrame({"TEMU Qty": t_cnt, "SHEIN Qty": s_cnt}).fillna(0).astype(int)
-        mix["Sold Qty"] = (mix["TEMU Qty"] + mix["SHEIN Qty"]).astype(int)
-        best = mix["Sold Qty"].sort_values(ascending=False).head(10)
-        return list(best.index.astype(str)), best
-
-# =========================
-# 4) Current & previous metrics
-# =========================
-if platform == "TEMU":
-    sales_sum, qty_sum, aov, cancel_qty, df_sold = temu_agg(df_temu, start, end)
-    psales, pqty, paov, pcancel, p_sold = temu_agg(df_temu, prev_start, prev_end)
-elif platform == "SHEIN":
-    sales_sum, qty_sum, aov, cancel_qty, df_sold = shein_agg(df_shein, start, end)
-    psales, pqty, paov, pcancel, p_sold = shein_agg(df_shein, prev_start, prev_end)
-else:
-    s1, q1, a1, c1, d1 = temu_agg(df_temu, start, end)
-    s2, q2, a2, c2, d2 = shein_agg(df_shein, start, end)
-    sales_sum, qty_sum, cancel_qty = s1 + s2, q1 + q2, c1 + c2
-    aov = sales_sum / qty_sum if qty_sum > 0 else 0.0
-    df_sold = pd.concat([d1, d2], ignore_index=True)
-
-    ps1, pq1, pa1, pc1, d1p = temu_agg(df_temu, prev_start, prev_end)
-    ps2, pq2, pa2, pc2, d2p = shein_agg(df_shein, prev_start, prev_end)
-    psales, pqty, pcancel = ps1 + ps2, pq1 + pq2, pc1 + pc2
-    paov = psales / pqty if pqty > 0 else 0.0
-    p_sold = pd.concat([d1p, d2p], ignore_index=True)
-
-# =========================
-# 5) KPI Card
-# =========================
-st.markdown(f"""
-<div class='cap-card'>
-  <div class='kpi-grid'>
-    <div class='kpi-item'>
-      <div class='kpi-title'>Total Order Amount</div>
-      <div class='kpi-value'>${sales_sum:,.2f}</div>
-      {kpi_delta_html(sales_sum, psales)}
-    </div>
-    <div class='kpi-item'>
-      <div class='kpi-title'>Total Order Quantity</div>
-      <div class='kpi-value'>{int(qty_sum):,}</div>
-      {kpi_delta_html(qty_sum, pqty)}
-    </div>
-    <div class='kpi-item'>
-      <div class='kpi-title'>AOV</div>
-      <div class='kpi-value'>${aov:,.2f}</div>
-      {kpi_delta_html(aov, paov)}
-    </div>
-    <div class='kpi-item'>
-      <div class='kpi-title'>Canceled Order</div>
-      <div class='kpi-value'>{int(cancel_qty):,}</div>
-      {kpi_delta_html(cancel_qty, pcancel)}
-    </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-# =========================
-# 6) Insights Card
-# =========================
-def pct_change(cur, prev):
-    if prev in (0, None) or pd.isna(prev): return None
-    return (cur - prev) / prev * 100.0
-
-def build_insights():
-    bullets = []
-    ac = pct_change(aov, paov)
-    cur_top, _ = get_bestseller_labels(platform, df_sold, start, end)
-    prev_top, _ = get_bestseller_labels(platform, p_sold, prev_start, prev_end)
-    entered = [x for x in cur_top if x not in prev_top]
-    dropped = [x for x in prev_top if x not in cur_top]
-    if ac is not None and abs(ac) >= 5:
-        bullets.append(f"ℹ️ AOV가 **{'하락' if ac<0 else '상승'} {abs(ac):.1f}%** 변했습니다.")
-    if entered:
-        bullets.append(f"✅ Top10 **신규 진입**: {', '.join(entered)} → 재고 확보/광고 확대 권장.")
-    if dropped:
-        bullets.append(f"⚠️ Top10 **이탈**: {', '.join(dropped)} → 인벤토리/가격/노출 점검.")
-    bullets.append("🧭 체크리스트: 쿠폰/프로모션, 상위 상품 재고(핵심 사이즈), 경쟁가/리뷰, 이미지/타이틀.")
-    return bullets
-
-insight_items = "".join([f"<li>{b}</li>" for b in build_insights()])
-st.markdown(f"""
-<div class='cap-card'>
-  <div class='insight-title'>자동 인사이트 & 액션 제안</div>
-  <ul class='insight-list'>
-    {insight_items}
-  </ul>
-</div>
-""", unsafe_allow_html=True)
-
-# =========================
-# 7) Daily Chart
-# =========================
 st.markdown("<div class='block-title'>일별 판매 추이</div>", unsafe_allow_html=True)
 daily = build_daily(platform, start, end)
-chart_box = st.empty()
+box = st.empty()
 if daily.empty:
-    chart_box.info("해당 기간에 데이터가 없습니다.")
+    box.info("해당 기간에 데이터가 없습니다.")
 else:
-    _ = chart_box.line_chart(daily[["Total_Sales","qty"]])  # 반환값 버려 부작용 방지
+    _ = box.line_chart(daily[["Total_Sales","qty"]])
 
 # =========================
-# 8) Best Seller
+# 8) Best Seller (full-width card; 아래 빈 박스 없음)
 # =========================
 st.markdown("<div class='block-title'>Best Seller 10</div>", unsafe_allow_html=True)
 
@@ -439,7 +432,6 @@ def best_table(platform, df_sold, s, e):
     mix["Sold Qty"] = (mix["TEMU Qty"] + mix["SHEIN Qty"]).astype(int)
     mix = mix.sort_values("Sold Qty", ascending=False).head(10).reset_index()
 
-    # 안전 리네임 (환경에 따라 index / style_key로 올 수 있음)
     if "index" in mix.columns:
         mix = mix.rename(columns={"index": "Style Number"})
     elif "style_key" in mix.columns:
@@ -451,7 +443,6 @@ def best_table(platform, df_sold, s, e):
     return mix[["Image","Style Number","Sold Qty","TEMU Qty","SHEIN Qty"]]
 
 best_df = best_table(platform, df_sold, start, end)
-# Best Seller 10 (full-width table)
 st.markdown("<div class='cap-card best-card'><div class='table-wrap'>", unsafe_allow_html=True)
 st.markdown(best_df.to_html(escape=False, index=False), unsafe_allow_html=True)
 st.markdown("</div></div>", unsafe_allow_html=True)

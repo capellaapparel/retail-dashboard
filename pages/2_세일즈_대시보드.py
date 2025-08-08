@@ -286,47 +286,57 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ========== DAILY CHART (robust) ==========
+# ======= Daily Chart (safe & clean) =======
 st.markdown("<div class='block-title'>일별 판매 추이</div>", unsafe_allow_html=True)
-# daily 계산은 기존 로직 그대로 쓰고, 여기서는 그려주기만
-chart_box = st.empty()  # 안전한 그릴자리
 
+def build_daily(platform: str, s: pd.Timestamp, e: pd.Timestamp) -> pd.DataFrame:
+    if platform == "TEMU":
+        t = df_temu[(df_temu["order date"] >= s) & (df_temu["order date"] <= e)]
+        t = t[t["order item status"].str.lower().isin(["shipped", "delivered"])]
+        daily = t.groupby(pd.Grouper(key="order date", freq="D")).agg(
+            qty=("quantity shipped", "sum"),
+            Total_Sales=("base price total", "sum"),
+        )
+
+    elif platform == "SHEIN":
+        s2 = df_shein[(df_shein["order date"] >= s) & (df_shein["order date"] <= e)]
+        s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])]
+        s2["qty"] = 1
+        daily = s2.groupby(pd.Grouper(key="order date", freq="D")).agg(
+            qty=("qty", "sum"),
+            Total_Sales=("product price", "sum"),
+        )
+
+    else:  # BOTH
+        t = df_temu[(df_temu["order date"] >= s) & (df_temu["order date"] <= e)]
+        t = t[t["order item status"].str.lower().isin(["shipped", "delivered"])].copy()
+        s2 = df_shein[(df_shein["order date"] >= s) & (df_shein["order date"] <= e)]
+        s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])].copy()
+        s2["qty"] = 1
+
+        t_daily = t.groupby(pd.Grouper(key="order date", freq="D")).agg(
+            t_qty=("quantity shipped", "sum"),
+            t_sales=("base price total", "sum"),
+        )
+        s_daily = s2.groupby(pd.Grouper(key="order date", freq="D")).agg(
+            s_qty=("qty", "sum"),
+            s_sales=("product price", "sum"),
+        )
+
+        daily = pd.concat([t_daily, s_daily], axis=1).fillna(0.0)
+        daily["qty"] = daily["t_qty"] + daily["s_qty"]
+        daily["Total_Sales"] = daily["t_sales"] + daily["s_sales"]
+        daily = daily[["qty", "Total_Sales"]]
+
+    return daily.reset_index().set_index("order date").fillna(0.0)
+
+# 실제 렌더
+chart_box = st.empty()
+daily = build_daily(platform, start, end)
 if daily.empty:
-    _ = chart_box.info("해당 기간에 데이터가 없습니다.")
+    chart_box.info("해당 기간에 데이터가 없습니다.")
 else:
-    # 반환 객체를 변수에 받아서 버림 -> 화면에 문서가 출력되는 부작용 방지
-    _ = chart_box.line_chart(daily[["Total_Sales", "qty"]])
-if platform == "TEMU":
-    t = df_temu[(df_temu["order date"]>=start)&(df_temu["order date"]<=end)]
-    t = t[t["order item status"].str.lower().isin(["shipped","delivered"])]
-    daily = t.groupby(pd.Grouper(key="order date", freq="D")).agg(
-        qty=("quantity shipped","sum"), Total_Sales=("base price total","sum")
-    )
-elif platform == "SHEIN":
-    s2 = df_shein[(df_shein["order date"]>=start)&(df_shein["order date"]<=end)]
-    s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])]
-    s2["qty"] = 1
-    daily = s2.groupby(pd.Grouper(key="order date", freq="D")).agg(
-        qty=("qty","sum"), Total_Sales=("product price","sum")
-    )
-else:
-    t = df_temu[(df_temu["order date"]>=start)&(df_temu["order date"]<=end)]
-    t = t[t["order item status"].str.lower().isin(["shipped","delivered"])].copy()
-    s2 = df_shein[(df_shein["order date"]>=start)&(df_shein["order date"]<=end)]
-    s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])].copy()
-    s2["qty"] = 1
-    t_daily = t.groupby(pd.Grouper(key="order date", freq="D")).agg(
-        t_qty=("quantity shipped","sum"), t_sales=("base price total","sum")
-    )
-    s_daily = s2.groupby(pd.Grouper(key="order date", freq="D")).agg(
-        s_qty=("qty","sum"), s_sales=("product price","sum")
-    )
-    daily = pd.concat([t_daily, s_daily], axis=1).fillna(0.0)
-    daily["qty"] = daily["t_qty"] + daily["s_qty"]
-    daily["Total_Sales"] = daily["t_sales"] + daily["s_sales"]
-    daily = daily[["qty","Total_Sales"]]
-
-daily = daily.reset_index().set_index("order date").fillna(0.0)
-st.line_chart(daily[["Total_Sales","qty"]]) if not daily.empty else st.info("해당 기간에 데이터가 없습니다.")
+    _ = chart_box.line_chart(daily[["Total_Sales", "qty"]])  # 반환값 버리기
 
 # ========== BEST SELLER (공통 style_key 기준, 정수 & 이미지 안정) ==========
 st.markdown("<div class='block-title'>Best Seller 10</div>", unsafe_allow_html=True)

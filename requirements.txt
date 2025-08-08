@@ -5,3 +5,4 @@ oauth2client
 scikit-learn
 openai>=1.2.0
 numpy
+beautifulsoup4

@@ -22,6 +22,8 @@ st.markdown("""
 .insight-list li { margin:4px 0; line-height:1.45; }
 img.thumb { width:60px; height:auto; border-radius:10px; }
 .block-title { margin:18px 0 8px 0; font-weight:700; font-size:1.05rem; }
+.quick-range { margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; }
+.quick-range button { padding:6px 10px; border:1px solid #e3e3ea; border-radius:8px; background:#fafafa; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -69,8 +71,8 @@ def kpi_delta_html(cur, prev):
     color = "#11b500" if pct >= 0 else "red"
     return f"<span class='kpi-delta' style='color:{color}'>{arrow} {abs(pct):.1f}%</span>"
 
+# 스타일 추출 & 이미지 매핑
 STYLE_RE = re.compile(r"\b([A-Z]{1,3}\d{3,5}[A-Z0-9]?)\b")
-
 def build_img_map(df_info: pd.DataFrame):
     keys = df_info["product number"].astype(str).str.upper().str.replace(" ", "", regex=False)
     return dict(zip(keys, df_info["image"]))
@@ -127,6 +129,26 @@ with c2:
     if isinstance(dr, (list, tuple)) and len(dr) == 2: start_date, end_date = dr
     else: start_date = end_date = dr
     start_date = max(min_dt, min(start_date, max_dt)); end_date = max(start_date, min(end_date, max_dt))
+
+    # 빠른 기간 버튼
+    b1, b2, b3, b4 = st.columns(4)
+    if b1.button("최근 1주"):
+        st.session_state["sales_date_range"] = ((today_ts - pd.Timedelta(days=6)).date(), today_d)
+        st.experimental_rerun()
+    if b2.button("최근 1개월"):
+        st.session_state["sales_date_range"] = ((today_ts - pd.Timedelta(days=29)).date(), today_d)
+        st.experimental_rerun()
+    if b3.button("이번 달"):
+        first = today_ts.replace(day=1).date()
+        st.session_state["sales_date_range"] = (first, today_d)
+        st.experimental_rerun()
+    if b4.button("지난 달"):
+        first_this = today_ts.replace(day=1)
+        last_month_end = first_this - pd.Timedelta(days=1)
+        first_last = last_month_end.replace(day=1).date()
+        st.session_state["sales_date_range"] = (first_last, last_month_end.date())
+        st.experimental_rerun()
+
     st.session_state["sales_date_range"] = (start_date, end_date)
 
 start = pd.to_datetime(st.session_state["sales_date_range"][0])
@@ -165,14 +187,21 @@ def get_bestseller_list(platform, df_sold, s, e):
         best = tmp.groupby("product description")["qty"].sum().sort_values(ascending=False).head(10)
         labels = best.index.astype(str)
     else:
+        # BOTH은 style_key 기준으로 합산
         t = df_temu[(df_temu["order date"] >= s) & (df_temu["order date"] <= e)]
-        t = t[t["order item status"].str.lower().isin(["shipped","delivered"])]
-        t_cnt = t.groupby("product number")["quantity shipped"].sum()
+        t = t[t["order item status"].str.lower().isin(["shipped","delivered"])].copy()
+        t["style_key"] = t["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
+        t = t.dropna(subset=["style_key"])
+        t_cnt = t.groupby("style_key")["quantity shipped"].sum().astype(int)
+
         s2 = df_shein[(df_shein["order date"] >= s) & (df_shein["order date"] <= e)]
-        s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])]
-        s_cnt = s2.groupby("product description").size()
-        mix = pd.DataFrame({"TEMU Qty": t_cnt, "SHEIN Qty": s_cnt}).fillna(0)
-        mix["Sold Qty"] = mix["TEMU Qty"] + mix["SHEIN Qty"]
+        s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])].copy()
+        s2["style_key"] = s2["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
+        s2 = s2.dropna(subset=["style_key"])
+        s_cnt = s2.groupby("style_key").size().astype(int)
+
+        mix = pd.DataFrame({"TEMU Qty": t_cnt, "SHEIN Qty": s_cnt}).fillna(0).astype(int)
+        mix["Sold Qty"] = (mix["TEMU Qty"] + mix["SHEIN Qty"]).astype(int)
         best = mix["Sold Qty"].sort_values(ascending=False).head(10)
         labels = best.index.astype(str)
     return list(labels), best
@@ -190,14 +219,15 @@ else:
     sales_sum, qty_sum, cancel_qty = s1 + s2, q1 + q2, c1 + c2
     aov = sales_sum / qty_sum if qty_sum > 0 else 0.0
     df_sold = pd.concat([d1, d2], ignore_index=True)
+
     ps1, pq1, pa1, pc1, d1p = temu_agg(df_temu, prev_start, prev_end)
     ps2, pq2, pa2, pc2, d2p = shein_agg(df_shein, prev_start, prev_end)
     psales, pqty, pcancel = ps1 + ps2, pq1 + pq2, pc1 + pc2
     paov = psales / pqty if pqty > 0 else 0.0
     p_sold = pd.concat([d1p, d2p], ignore_index=True)
 
-# ========== KPI CARD (HTML only) ==========
-kpi_html = f"""
+# ========== KPI CARD ==========
+st.markdown(f"""
 <div class='cap-card'>
   <div class='kpi-grid'>
     <div class='kpi-item'>
@@ -222,20 +252,16 @@ kpi_html = f"""
     </div>
   </div>
 </div>
-"""
-st.markdown(kpi_html, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# ========== INSIGHT CARD (single HTML block) ==========
+# ========== INSIGHT CARD ==========
 def pct_change(cur, prev):
     if prev in (0, None) or pd.isna(prev): return None
     return (cur - prev) / prev * 100.0
 
 def build_insights():
     bullets = []
-    sc = pct_change(sales_sum, psales)
-    qc = pct_change(qty_sum, pqty)
     ac = pct_change(aov, paov)
-    cc = pct_change(cancel_qty, pcancel)
     cur_top, _ = get_bestseller_list(platform, df_sold, start, end)
     prev_top, _ = get_bestseller_list(platform, p_sold, prev_start, prev_end)
     entered = [x for x in cur_top if x not in prev_top]
@@ -250,83 +276,91 @@ def build_insights():
     return bullets
 
 insight_items = "".join([f"<li>{b}</li>" for b in build_insights()])
-insight_html = f"""
+st.markdown(f"""
 <div class='cap-card'>
   <div class='insight-title'>자동 인사이트 & 액션 제안</div>
   <ul class='insight-list'>
     {insight_items}
   </ul>
 </div>
-"""
-st.markdown(insight_html, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# ========== DAILY CHART (no print side-effects) ==========
+# ========== DAILY CHART (robust) ==========
 st.markdown("<div class='block-title'>일별 판매 추이</div>", unsafe_allow_html=True)
-daily = (lambda p,s,e: (
-    df_temu.loc[
-        (df_temu["order date"]>=s)&(df_temu["order date"]<=e)&
-        (df_temu["order item status"].str.lower().isin(["shipped","delivered"]))
-    ].groupby(pd.Grouper(key="order date", freq="D"))
-     .agg(qty=("quantity shipped","sum"), Total_Sales=("base price total","sum"))
-) if p=="TEMU" else
-    df_shein.loc[
-        (df_shein["order date"]>=s)&(df_shein["order date"]<=e)&
-        (~df_shein["order status"].str.lower().isin(["customer refunded"]))
-    ].assign(qty=1).groupby(pd.Grouper(key="order date", freq="D"))
-     .agg(qty=("qty","sum"), Total_Sales=("product price","sum"))
- if p=="SHEIN" else
-    (lambda t,s2: pd.concat([
-        t.groupby(pd.Grouper(key="order date", freq="D")).agg(qty=("quantity shipped","sum"),
-                                                              Total_Sales=("base price total","sum"))
-        .rename(columns={"qty":"t_qty","Total_Sales":"t_sales"}),
-        s2.assign(qty=1).groupby(pd.Grouper(key="order date", freq="D"))
-           .agg(s_qty=("qty","sum"), s_sales=("product price","sum"))
-    ], axis=1).fillna(0.0).assign(qty=lambda d:d.get("qty",0)+d.get("s_qty",0),
-                                  Total_Sales=lambda d:d.get("t_sales",0)+d.get("s_sales",0))
-     )[["qty","Total_Sales"]]
- )(platform, start, end)
-
-if daily.empty:
-    st.info("해당 기간에 데이터가 없습니다.")
+if platform == "TEMU":
+    t = df_temu[(df_temu["order date"]>=start)&(df_temu["order date"]<=end)]
+    t = t[t["order item status"].str.lower().isin(["shipped","delivered"])]
+    daily = t.groupby(pd.Grouper(key="order date", freq="D")).agg(
+        qty=("quantity shipped","sum"), Total_Sales=("base price total","sum")
+    )
+elif platform == "SHEIN":
+    s2 = df_shein[(df_shein["order date"]>=start)&(df_shein["order date"]<=end)]
+    s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])]
+    s2["qty"] = 1
+    daily = s2.groupby(pd.Grouper(key="order date", freq="D")).agg(
+        qty=("qty","sum"), Total_Sales=("product price","sum")
+    )
 else:
-    st.line_chart(daily[["Total_Sales","qty"]])
+    t = df_temu[(df_temu["order date"]>=start)&(df_temu["order date"]<=end)]
+    t = t[t["order item status"].str.lower().isin(["shipped","delivered"])].copy()
+    s2 = df_shein[(df_shein["order date"]>=start)&(df_shein["order date"]<=end)]
+    s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])].copy()
+    s2["qty"] = 1
+    t_daily = t.groupby(pd.Grouper(key="order date", freq="D")).agg(
+        t_qty=("quantity shipped","sum"), t_sales=("base price total","sum")
+    )
+    s_daily = s2.groupby(pd.Grouper(key="order date", freq="D")).agg(
+        s_qty=("qty","sum"), s_sales=("product price","sum")
+    )
+    daily = pd.concat([t_daily, s_daily], axis=1).fillna(0.0)
+    daily["qty"] = daily["t_qty"] + daily["s_qty"]
+    daily["Total_Sales"] = daily["t_sales"] + daily["s_sales"]
+    daily = daily[["qty","Total_Sales"]]
 
-# ========== BEST SELLER (robust, int qty, correct images) ==========
+daily = daily.reset_index().set_index("order date").fillna(0.0)
+st.line_chart(daily[["Total_Sales","qty"]]) if not daily.empty else st.info("해당 기간에 데이터가 없습니다.")
+
+# ========== BEST SELLER (공통 style_key 기준, 정수 & 이미지 안정) ==========
 st.markdown("<div class='block-title'>Best Seller 10</div>", unsafe_allow_html=True)
 
 def best_table(platform, df_sold, s, e):
     if platform == "TEMU":
-        g = df_sold.groupby("product number")["quantity shipped"].sum().astype(int).reset_index()
-        g["Style Number"] = g["product number"].astype(str)
-        g["Image"] = g["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(style_key_from_label(x, IMG_MAP), "")))
-        g = g.rename(columns={"quantity shipped":"Sold Qty"})
+        g = (df_sold.assign(style_key=lambda d: d["product number"].astype(str)
+                             .apply(lambda x: style_key_from_label(x, IMG_MAP)))
+             .dropna(subset=["style_key"])
+             .groupby("style_key")["quantity shipped"].sum().astype(int).reset_index()
+             .rename(columns={"style_key":"Style Number","quantity shipped":"Sold Qty"}))
+        g["Image"] = g["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
         return g[["Image","Style Number","Sold Qty"]].sort_values("Sold Qty", ascending=False).head(10)
 
     if platform == "SHEIN":
         tmp = df_sold.copy(); tmp["qty"] = 1
-        g = tmp.groupby("product description")["qty"].sum().astype(int).reset_index()
-        g["Style Number"] = g["product description"].astype(str)
-        g["Image"] = g["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(style_key_from_label(x, IMG_MAP), "")))
-        g = g.rename(columns={"qty":"Sold Qty"})
+        g = (tmp.assign(style_key=lambda d: d["product description"].astype(str)
+                        .apply(lambda x: style_key_from_label(x, IMG_MAP)))
+             .dropna(subset=["style_key"])
+             .groupby("style_key")["qty"].sum().astype(int).reset_index()
+             .rename(columns={"style_key":"Style Number","qty":"Sold Qty"}))
+        g["Image"] = g["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
         return g[["Image","Style Number","Sold Qty"]].sort_values("Sold Qty", ascending=False).head(10)
 
-    # BOTH: 공통 스타일키 생성 후 합치기
+    # BOTH
     t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)&
                 (df_temu["order item status"].str.lower().isin(["shipped","delivered"]))].copy()
-    t["Style Number"] = t["product number"].astype(str)
-    t_group = t.groupby("Style Number")["quantity shipped"].sum().astype(int)
+    t["style_key"] = t["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
+    t = t.dropna(subset=["style_key"])
+    t_group = t.groupby("style_key")["quantity shipped"].sum().astype(int)
 
     s2 = df_shein[(df_shein["order date"]>=s)&(df_shein["order date"]<=e)&
                   (~df_shein["order status"].str.lower().isin(["customer refunded"]))].copy()
-    s2["Style Number"] = s2["product description"].astype(str)
-    s_group = s2.groupby("Style Number").size().astype(int)
+    s2["style_key"] = s2["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
+    s2 = s2.dropna(subset=["style_key"])
+    s_group = s2.groupby("style_key").size().astype(int)
 
-    summary = pd.DataFrame({"TEMU Qty": t_group, "SHEIN Qty": s_group}).fillna(0).astype(int)
-    summary["Sold Qty"] = (summary["TEMU Qty"] + summary["SHEIN Qty"]).astype(int)
-    summary = summary.sort_values("Sold Qty", ascending=False).head(10).reset_index()
-
-    summary["Image"] = summary["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(style_key_from_label(x, IMG_MAP), "")))
-    return summary[["Image","Style Number","Sold Qty","TEMU Qty","SHEIN Qty"]]
+    mix = pd.DataFrame({"TEMU Qty": t_group, "SHEIN Qty": s_group}).fillna(0).astype(int)
+    mix["Sold Qty"] = (mix["TEMU Qty"] + mix["SHEIN Qty"]).astype(int)
+    mix = mix.sort_values("Sold Qty", ascending=False).head(10).reset_index().rename(columns={"index":"Style Number"})
+    mix["Image"] = mix["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
+    return mix[["Image","Style Number","Sold Qty","TEMU Qty","SHEIN Qty"]]
 
 best_df = best_table(platform, df_sold, start, end)
 st.markdown("<div class='cap-card'>", unsafe_allow_html=True)

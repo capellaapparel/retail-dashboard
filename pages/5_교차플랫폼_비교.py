@@ -248,21 +248,18 @@ st.dataframe(
     }),
     use_container_width=True,
     hide_index=True,
-    height=640,
+    height=700,
     column_config={
-        # 👉 이미지 더 크게
-        "이미지": st.column_config.ImageColumn("이미지", width="large"),
-        # 👉 정수 컬럼은 step=1
+        # ▶ 숫자 픽셀로 지정해야 실제 썸네일 렌더 크기를 계산합니다.
+        "이미지": st.column_config.ImageColumn("이미지", width=THUMB),
         "TEMU Qty":  st.column_config.NumberColumn("TEMU Qty",  format="%,d", step=1),
         "SHEIN Qty": st.column_config.NumberColumn("SHEIN Qty", format="%,d", step=1),
-        # 👉 금액/평균단가는 소수 허용(step=0.01) → 빨간 표시 제거 + 포맷 적용
         "TEMU Sales":  st.column_config.NumberColumn("TEMU Sales",  format="$%,.2f", step=0.01),
         "SHEIN Sales": st.column_config.NumberColumn("SHEIN Sales", format="$%,.2f", step=0.01),
         "TEMU AOV":    st.column_config.NumberColumn("TEMU AOV",    format="$%,.2f", step=0.01),
         "SHEIN AOV":   st.column_config.NumberColumn("SHEIN AOV",   format="$%,.2f", step=0.01),
     }
 )
-
 # -------------------------
 # Download CSV (원자료)
 # -------------------------

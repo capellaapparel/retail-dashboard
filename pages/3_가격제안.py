@@ -57,6 +57,38 @@ def load_google_sheet(sheet_name):
 
 def _key(s): return str(s).upper().replace(" ", "")
 
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(s).lower())
+
+# ---- LIVE_DATE 컬럼 느슨 매칭 (예: TEMU_LIVE_DA, temu live date, temu-live 등) ----
+def _pick_live_col(df: pd.DataFrame, vendor: str) -> str | None:
+    """
+    vendor: 'temu' or 'shein'
+    컬럼명 안에 vendor와 'live'가 포함된 걸 우선 선택.
+    'date' / 'dt' / 'da'가 있으면 가산점. 가장 긴(정보 많은) 이름 선택.
+    """
+    want_v = _norm(vendor)
+    candidates = []
+    for c in df.columns:
+        n = _norm(c)
+        if want_v in n and "live" in n:
+            score = 0
+            if "date" in n: score += 3
+            if "dt" in n:   score += 2
+            if "da" in n:   score += 1
+            candidates.append((score, len(n), c))
+    if not candidates:
+        return None
+    # 점수 높고, 이름 긴 순으로 선택
+    candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return candidates[0][2]
+
+def _to_dt_by_vendor(df: pd.DataFrame, vendor: str) -> tuple[pd.Series, str | None]:
+    hit = _pick_live_col(df, vendor)
+    if hit is None:
+        return pd.Series([pd.NaT]*len(df), index=df.index), None
+    return pd.to_datetime(df[hit], errors="coerce"), hit
+
 # ===================== 페이지 & 데이터 로드 =====================
 st.set_page_config(page_title="가격 제안 대시보드", layout="wide")
 st.title("💡 가격 제안 대시보드")
@@ -70,23 +102,9 @@ df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 
 df_info["style_key"] = df_info["product number"].astype(str).map(_key)
 
-# ---- LIVE_DATE 컬럼 안전 매칭(공백/밑줄/대시/대소문자 무시) ----
-def _norm(s: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", str(s).lower())
-
-def _to_dt_series(df: pd.DataFrame, target_col: str) -> pd.Series:
-    want = _norm(target_col)   # e.g., "temu_live_date" -> "temulivedate"
-    hit = None
-    for c in df.columns:
-        if _norm(c) == want:
-            hit = c
-            break
-    if hit is None:
-        return pd.Series([pd.NaT]*len(df), index=df.index)
-    return pd.to_datetime(df[hit], errors="coerce")
-
-temu_live_series  = _to_dt_series(df_info, "temu_live_date")
-shein_live_series = _to_dt_series(df_info, "shein_live_date")
+# LIVE_DATE 매칭(실제 잡힌 컬럼명도 함께 리턴)
+temu_live_series, temu_live_col   = _to_dt_by_vendor(df_info, "temu")
+shein_live_series, shein_live_col = _to_dt_by_vendor(df_info, "shein")
 
 temu_live_map  = dict(zip(df_info["style_key"],  temu_live_series))
 shein_live_map = dict(zip(df_info["style_key"], shein_live_series))
@@ -126,7 +144,7 @@ def shein_now_num(style):
 def get_qty_temu(style, days):
     key = _key(style)
     live = temu_live_map.get(key, pd.NaT)
-    if pd.isna(live):      # 미등록 → 0 취급 (후에 필터에서 제외)
+    if pd.isna(live):
         return 0
     now = pd.Timestamp.now(); since = max(now - pd.Timedelta(days=days), live)
     d = df_temu[df_temu["product number"].astype(str)==str(style)].copy()
@@ -251,7 +269,7 @@ for _, row in df_info.iterrows():
     days_since_temu  = int((now_ts - temu_live).days)  if temu_registered  else None
     days_since_shein = int((now_ts - shein_live).days) if shein_registered else None
 
-    # TEMU (등록일 이후 데이터만)
+    # TEMU
     t_cur  = temu_now_num(style) if temu_registered else np.nan
     t_30   = int(get_qty_temu(style, 30)) if temu_registered else 0
     t_60   = int(get_qty_temu(style, 60)) if temu_registered else 0
@@ -259,7 +277,7 @@ for _, row in df_info.iterrows():
     t_all  = int(get_qty_temu(style, 9999)) if temu_registered else 0
     mode_t, why_t = classify(t_30, t_30p) if temu_registered else ("", "")
 
-    # SHEIN (등록일 이후 데이터만)
+    # SHEIN
     s_cur  = shein_now_num(style) if shein_registered else np.nan
     s_30   = int(get_qty_shein(style, 30)) if shein_registered else 0
     s_60   = int(get_qty_shein(style, 60)) if shein_registered else 0
@@ -314,8 +332,10 @@ with st.container(border=True):
     s_reg = int(df_rec["shein_registered"].sum())
     with cols[0]:
         st.metric("TEMU 등록 스타일", t_reg)
+        st.caption(f"↳ live col: **{temu_live_col or '감지 실패'}**")
     with cols[1]:
         st.metric("SHEIN 등록 스타일", s_reg)
+        st.caption(f"↳ live col: **{shein_live_col or '감지 실패'}**")
 
     if t_reg > 0:
         t_counts = df_rec.loc[df_rec["temu_registered"], "mode_TEMU"].value_counts()
@@ -324,10 +344,9 @@ with st.container(border=True):
         s_counts = df_rec.loc[df_rec["shein_registered"], "mode_SHEIN"].value_counts()
         st.caption(f"SHEIN 분포: {s_counts.to_dict()}")
 
-    # LIVE_DATE가 안 읽히는 경우 경고
-    if df_rec["temu_registered"].sum() == 0:
+    if t_reg == 0:
         st.warning("TEMU_LIVE_DATE 컬럼을 확인하세요. (표기/형식 이슈로 인식되지 않았을 수 있음)")
-    if df_rec["shein_registered"].sum() == 0:
+    if s_reg == 0:
         st.warning("SHEIN_LIVE_DATE 컬럼을 확인하세요. (표기/형식 이슈로 인식되지 않았을 수 있음)")
 
 # ===================== 보기: TEMU / SHEIN =====================
@@ -337,7 +356,7 @@ cA, cB = st.columns([1.2, 1])
 with cA:
     MATURITY_DAYS = st.slider("성숙 기준(일)", min_value=0, max_value=180, value=90, step=5)
 with cB:
-    APPLY_MATURITY = st.checkbox("성숙 기준 적용", value=True)
+    APPLY_MATURITY = st.checkbox("성숙 기준 적용", value=False)
 
 def highlight_price(val):
     if val not in ["-", None, ""] and not pd.isna(val):

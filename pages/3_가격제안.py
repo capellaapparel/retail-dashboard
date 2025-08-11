@@ -4,9 +4,10 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import re
 from dateutil import parser
 
-# ============== 공통 유틸 ==============
+# ===================== 공통 유틸 =====================
 def safe_float(x):
     try:
         if pd.isna(x): return np.nan
@@ -56,7 +57,7 @@ def load_google_sheet(sheet_name):
 
 def _key(s): return str(s).upper().replace(" ", "")
 
-# ============== 데이터 로드 ==============
+# ===================== 페이지 & 데이터 로드 =====================
 st.set_page_config(page_title="가격 제안 대시보드", layout="wide")
 st.title("💡 가격 제안 대시보드")
 
@@ -67,20 +68,26 @@ df_shein = load_google_sheet("SHEIN_SALES")
 df_temu["order date"]  = df_temu["purchase date"].apply(parse_temudate)
 df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 
-# style_key & LIVE DATE 시리즈(컬럼 없어도 안전하게)
 df_info["style_key"] = df_info["product number"].astype(str).map(_key)
 
-def _to_dt_series(df: pd.DataFrame, col: str) -> pd.Series:
-    c = col.lower().strip()
-    if c not in df.columns:
-        return pd.Series([pd.NaT]*len(df), index=df.index)
-    return pd.to_datetime(df[c], errors="coerce")
+# ---- LIVE_DATE 컬럼 안전 매칭(공백/밑줄/대시/대소문자 무시) ----
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(s).lower())
 
-# 시트에 TEMU_LIVE_DATE / SHEIN_LIVE_DATE 가 있어도 로더가 소문자로 바꾸므로 아래 이름으로 접근
+def _to_dt_series(df: pd.DataFrame, target_col: str) -> pd.Series:
+    want = _norm(target_col)   # e.g., "temu_live_date" -> "temulivedate"
+    hit = None
+    for c in df.columns:
+        if _norm(c) == want:
+            hit = c
+            break
+    if hit is None:
+        return pd.Series([pd.NaT]*len(df), index=df.index)
+    return pd.to_datetime(df[hit], errors="coerce")
+
 temu_live_series  = _to_dt_series(df_info, "temu_live_date")
 shein_live_series = _to_dt_series(df_info, "shein_live_date")
 
-# 키 → 날짜 매핑
 temu_live_map  = dict(zip(df_info["style_key"],  temu_live_series))
 shein_live_map = dict(zip(df_info["style_key"], shein_live_series))
 
@@ -92,7 +99,7 @@ def to_erp(x):
     except: return np.nan
 df_info["erp price"] = df_info["erp price"].apply(to_erp)
 
-# ============== 플랫폼별 현재가 (등록일 이후만) ==============
+# ===================== 플랫폼별 현재가 (등록일 이후만) =====================
 def temu_now_num(style):
     key = _key(style)
     live = temu_live_map.get(key, pd.NaT)
@@ -115,7 +122,7 @@ def shein_now_num(style):
     vals = vals[vals>0]
     return float(vals.mean()) if len(vals)>0 else np.nan
 
-# ============== 플랫폼별 판매 집계 (등록일 이후만) ==============
+# ===================== 플랫폼별 판매 집계 (등록일 이후만) =====================
 def get_qty_temu(style, days):
     key = _key(style)
     live = temu_live_map.get(key, pd.NaT)
@@ -138,7 +145,7 @@ def get_qty_shein(style, days):
     d = d[(d["order date"]>=since) & (d["order date"]<=now)]
     return d.shape[0]
 
-# ============== 추천가 로직 ==============
+# ===================== 추천가 로직 =====================
 PLATFORM_CFG = {
     "TEMU":  {"fee_rate":0.12, "extra_fee":0.0, "base_add":7, "min_add":2, "floor":9},
     "SHEIN": {"fee_rate":0.15, "extra_fee":0.0, "base_add":7, "min_add":2, "floor":9},
@@ -227,7 +234,7 @@ def classify(q30, q30_prev):
     else:
         return "", ""
 
-# ============== 레코드 빌드 (플랫폼 분리 & 미등록 제외 플래그 + 경과일) ==============
+# ===================== 레코드 빌드 =====================
 records = []
 now_ts = pd.Timestamp.now().normalize()
 for _, row in df_info.iterrows():
@@ -299,13 +306,37 @@ for _, row in df_info.iterrows():
 
 df_rec = pd.DataFrame(records)
 
-# ============== 보기: TEMU / SHEIN (미등록 제외 + 성숙 기준 컨트롤 & 자동 완화) ==============
+# ===================== 진단 박스 =====================
+with st.container(border=True):
+    st.markdown("**진단**")
+    cols = st.columns(4)
+    t_reg = int(df_rec["temu_registered"].sum())
+    s_reg = int(df_rec["shein_registered"].sum())
+    with cols[0]:
+        st.metric("TEMU 등록 스타일", t_reg)
+    with cols[1]:
+        st.metric("SHEIN 등록 스타일", s_reg)
+
+    if t_reg > 0:
+        t_counts = df_rec.loc[df_rec["temu_registered"], "mode_TEMU"].value_counts()
+        st.caption(f"TEMU 분포: {t_counts.to_dict()}")
+    if s_reg > 0:
+        s_counts = df_rec.loc[df_rec["shein_registered"], "mode_SHEIN"].value_counts()
+        st.caption(f"SHEIN 분포: {s_counts.to_dict()}")
+
+    # LIVE_DATE가 안 읽히는 경우 경고
+    if df_rec["temu_registered"].sum() == 0:
+        st.warning("TEMU_LIVE_DATE 컬럼을 확인하세요. (표기/형식 이슈로 인식되지 않았을 수 있음)")
+    if df_rec["shein_registered"].sum() == 0:
+        st.warning("SHEIN_LIVE_DATE 컬럼을 확인하세요. (표기/형식 이슈로 인식되지 않았을 수 있음)")
+
+# ===================== 보기: TEMU / SHEIN =====================
 platform_view = st.radio("플랫폼", options=["TEMU","SHEIN"], horizontal=True)
 
-colA, colB = st.columns([1.2, 1])
-with colA:
+cA, cB = st.columns([1.2, 1])
+with cA:
     MATURITY_DAYS = st.slider("성숙 기준(일)", min_value=0, max_value=180, value=90, step=5)
-with colB:
+with cB:
     APPLY_MATURITY = st.checkbox("성숙 기준 적용", value=True)
 
 def highlight_price(val):

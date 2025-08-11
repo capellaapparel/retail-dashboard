@@ -54,6 +54,8 @@ def load_google_sheet(sheet_name):
     df.columns = [c.lower().strip() for c in df.columns]
     return df
 
+def _key(s): return str(s).upper().replace(" ", "")
+
 # ============== 데이터 로드 ==============
 st.set_page_config(page_title="가격 제안 대시보드", layout="wide")
 st.title("💡 가격 제안 대시보드")
@@ -65,6 +67,11 @@ df_shein = load_google_sheet("SHEIN_SALES")
 df_temu["order date"]  = df_temu["purchase date"].apply(parse_temudate)
 df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 
+# style_key & LIVE DATE 맵
+df_info["style_key"] = df_info["product number"].astype(str).map(_key)
+temu_live_map  = dict(zip(df_info["style_key"], pd.to_datetime(df_info.get("temu_live_date"),  errors="coerce")))
+shein_live_map = dict(zip(df_info["style_key"], pd.to_datetime(df_info.get("shein_live_date"), errors="coerce")))
+
 img_dict = dict(zip(df_info["product number"].astype(str), df_info["image"]))
 
 # ERP price 정규화
@@ -73,29 +80,47 @@ def to_erp(x):
     except: return np.nan
 df_info["erp price"] = df_info["erp price"].apply(to_erp)
 
-# ============== 플랫폼별 현재가 (숫자) ==============
+# ============== 플랫폼별 현재가 (등록일 이후만) ==============
 def temu_now_num(style):
-    vals = df_temu[df_temu["product number"].astype(str)==str(style)]["base price total"].apply(safe_float)
+    key = _key(style)
+    live = temu_live_map.get(key, pd.NaT)
+    if pd.isna(live):   # 미등록 → 제외
+        return np.nan
+    d = df_temu[df_temu["product number"].astype(str)==str(style)].copy()
+    d = d[d["order date"]>=live]
+    vals = d["base price total"].apply(safe_float)
     vals = vals[vals>0]
     return float(vals.mean()) if len(vals)>0 else np.nan
 
 def shein_now_num(style):
-    vals = df_shein[df_shein["product description"].astype(str)==str(style)]["product price"].apply(safe_float)
+    key = _key(style)
+    live = shein_live_map.get(key, pd.NaT)
+    if pd.isna(live):
+        return np.nan
+    d = df_shein[df_shein["product description"].astype(str)==str(style)].copy()
+    d = d[d["order date"]>=live]
+    vals = d["product price"].apply(safe_float)
     vals = vals[vals>0]
     return float(vals.mean()) if len(vals)>0 else np.nan
 
-# ============== 플랫폼별 판매 집계 (기간) ==============
+# ============== 플랫폼별 판매 집계 (등록일 이후만) ==============
 def get_qty_temu(style, days):
-    now = pd.Timestamp.now()
-    since = now - pd.Timedelta(days=days)
+    key = _key(style)
+    live = temu_live_map.get(key, pd.NaT)
+    if pd.isna(live):      # 미등록 → 0 취급 (후에 필터에서 제외)
+        return 0
+    now = pd.Timestamp.now(); since = max(now - pd.Timedelta(days=days), live)
     d = df_temu[df_temu["product number"].astype(str)==str(style)].copy()
     d = d[d["order item status"].astype(str).str.lower().isin(["shipped","delivered"])]
     d = d[(d["order date"]>=since) & (d["order date"]<=now)]
     return pd.to_numeric(d["quantity shipped"], errors="coerce").fillna(0).sum()
 
 def get_qty_shein(style, days):
-    now = pd.Timestamp.now()
-    since = now - pd.Timedelta(days=days)
+    key = _key(style)
+    live = shein_live_map.get(key, pd.NaT)
+    if pd.isna(live):
+        return 0
+    now = pd.Timestamp.now(); since = max(now - pd.Timedelta(days=days), live)
     d = df_shein[df_shein["product description"].astype(str)==str(style)].copy()
     d = d[~d["order status"].astype(str).str.lower().isin(["customer refunded"])]
     d = d[(d["order date"]>=since) & (d["order date"]<=now)]
@@ -190,38 +215,56 @@ def classify(q30, q30_prev):
     else:
         return "", ""
 
-# ============== 레코드 빌드 (플랫폼 분리) ==============
+# ============== 레코드 빌드 (플랫폼 분리 & 미등록 제외 플래그) ==============
 records = []
+now_ts = pd.Timestamp.now().normalize()
 for _, row in df_info.iterrows():
     style = str(row["product number"])
+    s_key = _key(style)
     erp   = row["erp price"]
     img   = img_dict.get(style, "")
 
-    # TEMU
-    t_cur  = temu_now_num(style)
-    t_30   = int(get_qty_temu(style, 30))
-    t_60   = int(get_qty_temu(style, 60))
-    t_30p  = t_60 - t_30
-    t_all  = int(get_qty_temu(style, 9999))
-    mode_t, why_t = classify(t_30, t_30p)
+    temu_live  = temu_live_map.get(s_key, pd.NaT)
+    shein_live = shein_live_map.get(s_key, pd.NaT)
+    temu_registered  = pd.notna(temu_live)
+    shein_registered = pd.notna(shein_live)
 
-    # SHEIN
-    s_cur  = shein_now_num(style)
-    s_30   = int(get_qty_shein(style, 30))
-    s_60   = int(get_qty_shein(style, 60))
+    days_since_temu  = int((now_ts - temu_live).days)  if temu_registered  else None
+    days_since_shein = int((now_ts - shein_live).days) if shein_registered else None
+
+    # TEMU (등록일 이후 데이터만)
+    t_cur  = temu_now_num(style) if temu_registered else np.nan
+    t_30   = int(get_qty_temu(style, 30)) if temu_registered else 0
+    t_60   = int(get_qty_temu(style, 60)) if temu_registered else 0
+    t_30p  = t_60 - t_30
+    t_all  = int(get_qty_temu(style, 9999)) if temu_registered else 0
+    mode_t, why_t = classify(t_30, t_30p) if temu_registered else ("", "")
+
+    # SHEIN (등록일 이후 데이터만)
+    s_cur  = shein_now_num(style) if shein_registered else np.nan
+    s_30   = int(get_qty_shein(style, 30)) if shein_registered else 0
+    s_60   = int(get_qty_shein(style, 60)) if shein_registered else 0
     s_30p  = s_60 - s_30
-    s_all  = int(get_qty_shein(style, 9999))
-    mode_s, why_s = classify(s_30, s_30p)
+    s_all  = int(get_qty_shein(style, 9999)) if shein_registered else 0
+    mode_s, why_s = classify(s_30, s_30p) if shein_registered else ("", "")
 
     sim   = similar_avg(style)
 
-    rec_t = suggest_price_platform(erp, t_cur, [s_cur, sim], mode_t, PLATFORM_CFG["TEMU"])
-    rec_s = suggest_price_platform(erp, s_cur, [t_cur, sim], mode_s, PLATFORM_CFG["SHEIN"])
+    rec_t = suggest_price_platform(erp, t_cur, [s_cur, sim], mode_t, PLATFORM_CFG["TEMU"])  if temu_registered else np.nan
+    rec_s = suggest_price_platform(erp, s_cur, [t_cur, sim], mode_s, PLATFORM_CFG["SHEIN"]) if shein_registered else np.nan
 
     records.append({
         "이미지": make_img_tag(img),
         "Style Number": style,
         "ERP Price": show_price(erp),
+
+        # 등록/경과일
+        "temu_registered": temu_registered,
+        "shein_registered": shein_registered,
+        "temu_live_date": temu_live,
+        "shein_live_date": shein_live,
+        "days_since_temu": days_since_temu,
+        "days_since_shein": days_since_shein,
 
         # TEMU
         "TEMU 현재가": show_price(t_cur),
@@ -244,43 +287,53 @@ for _, row in df_info.iterrows():
 
 df_rec = pd.DataFrame(records)
 
-# ============== 보기: TEMU / SHEIN ==============
+# ============== 보기: TEMU / SHEIN (미등록 제외 + 3개월 경과 필터) ==============
 platform_view = st.radio("플랫폼", options=["TEMU","SHEIN"], horizontal=True)
+
+MATURITY_DAYS = 90  # 업로드 후 3개월
 
 def highlight_price(val):
     if val not in ["-", None, ""] and not pd.isna(val):
         return 'background-color:#d4edda; color:#155724; font-weight:700;'
     return ''
 
-def display_table(df, comment, platform_view, mode_col, cols):
-    show = df[cols].copy()
+def display_table(df, comment, platform_view, cols):
     st.markdown(f"**{comment}**")
     if platform_view == "TEMU":
-        styled = show.style.applymap(highlight_price, subset=["추천가_TEMU"])
+        styled = df[cols].style.applymap(highlight_price, subset=["추천가_TEMU"])
     else:
-        styled = show.style.applymap(highlight_price, subset=["추천가_SHEIN"])
+        styled = df[cols].style.applymap(highlight_price, subset=["추천가_SHEIN"])
     st.write(styled.to_html(escape=False, index=False), unsafe_allow_html=True)
-
-tabs = st.tabs(["🆕 판매 없음", "🟠 판매 저조", "📉 판매 급감", "🔥 가격 인상 추천"])
 
 if platform_view == "TEMU":
     base_cols = ["이미지","Style Number","ERP Price","TEMU 현재가","추천가_TEMU","30일판매_TEMU","이전30일_TEMU","전체판매_TEMU","사유_TEMU"]
+    view = df_rec[df_rec["temu_registered"]].copy()
+
+    # ▶ 판매없음/저조 탭에는 '등록 후 90일 경과' 조건 적용
+    mature_mask = view["days_since_temu"].fillna(0) >= MATURITY_DAYS
+
+    tabs = st.tabs(["🆕 판매 없음", "🟠 판매 저조", "📉 판매 급감", "🔥 가격 인상 추천"])
     with tabs[0]:
-        display_table(df_rec[df_rec["mode_TEMU"]=="new"],  "TEMU 미판매/신규 (동종 평균가 참고해 최소선 제시)", "TEMU", "mode_TEMU", base_cols)
+        display_table(view[(view["mode_TEMU"]=="new") & mature_mask],  "TEMU 미판매/신규 (등록 90일 경과만 표시)", "TEMU", base_cols)
     with tabs[1]:
-        display_table(df_rec[df_rec["mode_TEMU"]=="slow"], "TEMU 슬로우셀러 (경쟁가 하회 + 현재가 인상 금지)", "TEMU", "mode_TEMU", base_cols)
+        display_table(view[(view["mode_TEMU"]=="slow") & mature_mask], "TEMU 슬로우셀러 (등록 90일 경과만 표시)", "TEMU", base_cols)
     with tabs[2]:
-        display_table(df_rec[df_rec["mode_TEMU"]=="drop"], "TEMU 판매 급감 (강한 할인, 인상 금지)", "TEMU", "mode_TEMU", base_cols)
+        display_table(view[view["mode_TEMU"]=="drop"], "TEMU 판매 급감", "TEMU", base_cols)
     with tabs[3]:
-        display_table(df_rec[df_rec["mode_TEMU"]=="hot"],  "TEMU 핫아이템 (최소 5% 또는 $0.5 인상, 경쟁가+α)", "TEMU", "mode_TEMU", base_cols)
+        display_table(view[view["mode_TEMU"]=="hot"],  "TEMU 핫아이템", "TEMU", base_cols)
 
 else:
     base_cols = ["이미지","Style Number","ERP Price","SHEIN 현재가","추천가_SHEIN","30일판매_SHEIN","이전30일_SHEIN","전체판매_SHEIN","사유_SHEIN"]
+    view = df_rec[df_rec["shein_registered"]].copy()
+
+    mature_mask = view["days_since_shein"].fillna(0) >= MATURITY_DAYS
+
+    tabs = st.tabs(["🆕 판매 없음", "🟠 판매 저조", "📉 판매 급감", "🔥 가격 인상 추천"])
     with tabs[0]:
-        display_table(df_rec[df_rec["mode_SHEIN"]=="new"],  "SHEIN 미판매/신규 (동종 평균가 참고해 최소선 제시)", "SHEIN", "mode_SHEIN", base_cols)
+        display_table(view[(view["mode_SHEIN"]=="new") & mature_mask],  "SHEIN 미판매/신규 (등록 90일 경과만 표시)", "SHEIN", base_cols)
     with tabs[1]:
-        display_table(df_rec[df_rec["mode_SHEIN"]=="slow"], "SHEIN 슬로우셀러 (경쟁가 하회 + 현재가 인상 금지)", "SHEIN", "mode_SHEIN", base_cols)
+        display_table(view[(view["mode_SHEIN"]=="slow") & mature_mask], "SHEIN 슬로우셀러 (등록 90일 경과만 표시)", "SHEIN", base_cols)
     with tabs[2]:
-        display_table(df_rec[df_rec["mode_SHEIN"]=="drop"], "SHEIN 판매 급감 (강한 할인, 인상 금지)", "SHEIN", "mode_SHEIN", base_cols)
+        display_table(view[view["mode_SHEIN"]=="drop"], "SHEIN 판매 급감", "SHEIN", base_cols)
     with tabs[3]:
-        display_table(df_rec[df_rec["mode_SHEIN"]=="hot"],  "SHEIN 핫아이템 (최소 5% 또는 $0.5 인상, 경쟁가+α)", "SHEIN", "mode_SHEIN", base_cols)
+        display_table(view[view["mode_SHEIN"]=="hot"],  "SHEIN 핫아이템", "SHEIN", base_cols)

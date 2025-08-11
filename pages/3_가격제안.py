@@ -76,7 +76,8 @@ def _to_dt_series(df: pd.DataFrame, col: str) -> pd.Series:
         return pd.Series([pd.NaT]*len(df), index=df.index)
     return pd.to_datetime(df[c], errors="coerce")
 
-temu_live_series  = _to_dt_series(df_info, "temu_live_date")   # 시트에서 TEMU_LIVE_DATE여도 OK (소문자화됨)
+# 시트에 TEMU_LIVE_DATE / SHEIN_LIVE_DATE 가 있어도 로더가 소문자로 바꾸므로 아래 이름으로 접근
+temu_live_series  = _to_dt_series(df_info, "temu_live_date")
 shein_live_series = _to_dt_series(df_info, "shein_live_date")
 
 # 키 → 날짜 매핑
@@ -226,7 +227,7 @@ def classify(q30, q30_prev):
     else:
         return "", ""
 
-# ============== 레코드 빌드 (플랫폼 분리 & 미등록 제외 플래그 + 90일 성숙 필터) ==============
+# ============== 레코드 빌드 (플랫폼 분리 & 미등록 제외 플래그 + 경과일) ==============
 records = []
 now_ts = pd.Timestamp.now().normalize()
 for _, row in df_info.iterrows():
@@ -298,9 +299,14 @@ for _, row in df_info.iterrows():
 
 df_rec = pd.DataFrame(records)
 
-# ============== 보기: TEMU / SHEIN (미등록 제외 + 3개월 경과 필터) ==============
+# ============== 보기: TEMU / SHEIN (미등록 제외 + 성숙 기준 컨트롤 & 자동 완화) ==============
 platform_view = st.radio("플랫폼", options=["TEMU","SHEIN"], horizontal=True)
-MATURITY_DAYS = 90  # 업로드 후 3개월
+
+colA, colB = st.columns([1.2, 1])
+with colA:
+    MATURITY_DAYS = st.slider("성숙 기준(일)", min_value=0, max_value=180, value=90, step=5)
+with colB:
+    APPLY_MATURITY = st.checkbox("성숙 기준 적용", value=True)
 
 def highlight_price(val):
     if val not in ["-", None, ""] and not pd.isna(val):
@@ -309,6 +315,9 @@ def highlight_price(val):
 
 def display_table(df, comment, platform_view, cols):
     st.markdown(f"**{comment}**")
+    if df.empty:
+        st.info("표시할 데이터가 없습니다.")
+        return
     if platform_view == "TEMU":
         styled = df[cols].style.applymap(highlight_price, subset=["추천가_TEMU"])
     else:
@@ -316,33 +325,50 @@ def display_table(df, comment, platform_view, cols):
     st.write(styled.to_html(escape=False, index=False), unsafe_allow_html=True)
 
 if platform_view == "TEMU":
-    base_cols = ["이미지","Style Number","ERP Price","TEMU 현재가","추천가_TEMU","30일판매_TEMU","이전30일_TEMU","전체판매_TEMU","사유_TEMU"]
+    base_cols = ["이미지","Style Number","ERP Price","TEMU 현재가","추천가_TEMU",
+                 "30일판매_TEMU","이전30일_TEMU","전체판매_TEMU","사유_TEMU"]
     view = df_rec[df_rec["temu_registered"]].copy()
-
-    # ▶ 판매없음/저조 탭에는 '등록 후 90일 경과' 조건 적용
-    mature_mask = view["days_since_temu"].fillna(0) >= MATURITY_DAYS
+    maturity_mask = (view["days_since_temu"].fillna(0) >= MATURITY_DAYS) if APPLY_MATURITY else True
 
     tabs = st.tabs(["🆕 판매 없음", "🟠 판매 저조", "📉 판매 급감", "🔥 가격 인상 추천"])
+
+    def show_tab(df_mask, title):
+        base = view[df_mask]
+        df_tab = view[df_mask & maturity_mask] if isinstance(maturity_mask, pd.Series) else view[df_mask]
+        if df_tab.empty and APPLY_MATURITY and not base.empty:
+            st.warning(f"{title} 결과가 없습니다. (성숙 기준 {MATURITY_DAYS}일 미만 제외) → 최근 등록 포함으로 완화해 표시합니다.")
+            df_tab = base
+        display_table(df_tab, title, "TEMU", base_cols)
+
     with tabs[0]:
-        display_table(view[(view["mode_TEMU"]=="new") & mature_mask],  "TEMU 미판매/신규 (등록 90일 경과만 표시)", "TEMU", base_cols)
+        show_tab(view["mode_TEMU"].eq("new"),  "TEMU 미판매/신규")
     with tabs[1]:
-        display_table(view[(view["mode_TEMU"]=="slow") & mature_mask], "TEMU 슬로우셀러 (등록 90일 경과만 표시)", "TEMU", base_cols)
+        show_tab(view["mode_TEMU"].eq("slow"), "TEMU 슬로우셀러")
     with tabs[2]:
         display_table(view[view["mode_TEMU"]=="drop"], "TEMU 판매 급감", "TEMU", base_cols)
     with tabs[3]:
         display_table(view[view["mode_TEMU"]=="hot"],  "TEMU 핫아이템", "TEMU", base_cols)
 
 else:
-    base_cols = ["이미지","Style Number","ERP Price","SHEIN 현재가","추천가_SHEIN","30일판매_SHEIN","이전30일_SHEIN","전체판매_SHEIN","사유_SHEIN"]
+    base_cols = ["이미지","Style Number","ERP Price","SHEIN 현재가","추천가_SHEIN",
+                 "30일판매_SHEIN","이전30일_SHEIN","전체판매_SHEIN","사유_SHEIN"]
     view = df_rec[df_rec["shein_registered"]].copy()
-
-    mature_mask = view["days_since_shein"].fillna(0) >= MATURITY_DAYS
+    maturity_mask = (view["days_since_shein"].fillna(0) >= MATURITY_DAYS) if APPLY_MATURITY else True
 
     tabs = st.tabs(["🆕 판매 없음", "🟠 판매 저조", "📉 판매 급감", "🔥 가격 인상 추천"])
+
+    def show_tab(df_mask, title):
+        base = view[df_mask]
+        df_tab = view[df_mask & maturity_mask] if isinstance(maturity_mask, pd.Series) else view[df_mask]
+        if df_tab.empty and APPLY_MATURITY and not base.empty:
+            st.warning(f"{title} 결과가 없습니다. (성숙 기준 {MATURITY_DAYS}일 미만 제외) → 최근 등록 포함으로 완화해 표시합니다.")
+            df_tab = base
+        display_table(df_tab, title, "SHEIN", base_cols)
+
     with tabs[0]:
-        display_table(view[(view["mode_SHEIN"]=="new") & mature_mask],  "SHEIN 미판매/신규 (등록 90일 경과만 표시)", "SHEIN", base_cols)
+        show_tab(view["mode_SHEIN"].eq("new"),  "SHEIN 미판매/신규")
     with tabs[1]:
-        display_table(view[(view["mode_SHEIN"]=="slow") & mature_mask], "SHEIN 슬로우셀러 (등록 90일 경과만 표시)", "SHEIN", base_cols)
+        show_tab(view["mode_SHEIN"].eq("slow"), "SHEIN 슬로우셀러")
     with tabs[2]:
         display_table(view[view["mode_SHEIN"]=="drop"], "SHEIN 판매 급감", "SHEIN", base_cols)
     with tabs[3]:

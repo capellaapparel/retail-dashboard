@@ -226,14 +226,18 @@ st.dataframe(
     }),
     use_container_width=True,
     hide_index=True,
+    height=640,
     column_config={
-        "이미지": st.column_config.ImageColumn("이미지", width="small"),
+        # 👉 이미지 더 크게
+        "이미지": st.column_config.ImageColumn("이미지", width="large"),
+        # 👉 정수 컬럼은 step=1
         "TEMU Qty":  st.column_config.NumberColumn("TEMU Qty",  format="%,d", step=1),
         "SHEIN Qty": st.column_config.NumberColumn("SHEIN Qty", format="%,d", step=1),
-        "TEMU Sales":  st.column_config.NumberColumn("TEMU Sales",  format="$%,.2f"),
-        "SHEIN Sales": st.column_config.NumberColumn("SHEIN Sales", format="$%,.2f"),
-        "TEMU AOV":    st.column_config.NumberColumn("TEMU AOV",    format="$%,.2f"),
-        "SHEIN AOV":   st.column_config.NumberColumn("SHEIN AOV",   format="$%,.2f"),
+        # 👉 금액/평균단가는 소수 허용(step=0.01) → 빨간 표시 제거 + 포맷 적용
+        "TEMU Sales":  st.column_config.NumberColumn("TEMU Sales",  format="$%,.2f", step=0.01),
+        "SHEIN Sales": st.column_config.NumberColumn("SHEIN Sales", format="$%,.2f", step=0.01),
+        "TEMU AOV":    st.column_config.NumberColumn("TEMU AOV",    format="$%,.2f", step=0.01),
+        "SHEIN AOV":   st.column_config.NumberColumn("SHEIN AOV",   format="$%,.2f", step=0.01),
     }
 )
 

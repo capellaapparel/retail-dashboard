@@ -3,6 +3,8 @@ import pandas as pd
 import re
 from dateutil import parser
 
+st.set_page_config(page_title="Capella Dashboard", layout="wide")
+
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name: str) -> pd.DataFrame:
     import gspread

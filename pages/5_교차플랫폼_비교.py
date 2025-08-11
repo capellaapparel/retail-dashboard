@@ -201,6 +201,12 @@ with st.container(border=True):
         st.metric("SHEIN 강세", f"{shein_strong:,}")
 
 # -------------------------
+# Default sort: 총 매출 내림차순
+# -------------------------
+combined["총매출"] = combined["temu_sales"] + combined["shein_sales"]
+combined = combined.sort_values("총매출", ascending=False)
+
+# -------------------------
 # Table (이미지 보이면서 헤더 정렬 가능)
 # -------------------------
 # 👉 썸네일 실제 크기 키우기(CSS). 컬럼 폭이 아니라 이미지 높이를 늘려야 커집니다.
@@ -264,7 +270,7 @@ st.dataframe(
 # -------------------------
 st.download_button(
     "CSV 다운로드",
-    data=combined.to_csv(index=False),
+    data=combined.drop(columns=["총매출"], errors="ignore").to_csv(index=False),
     file_name="cross_platform_compare.csv",
     mime="text/csv",
 )

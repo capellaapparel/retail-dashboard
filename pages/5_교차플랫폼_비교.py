@@ -106,7 +106,7 @@ dr = st.date_input(
 if isinstance(dr, (list, tuple)):
     start, end = dr
 else:
-    start = end = dr
+    start, end = dr, dr
 start = pd.to_datetime(start)
 end = pd.to_datetime(end) + pd.Timedelta(hours=23, minutes=59, seconds=59)
 
@@ -145,24 +145,7 @@ def tag_strength(r):
     return "균형"
 combined["태그"] = combined.apply(tag_strength, axis=1)
 
-img_map = IMG_MAP
-combined["이미지"] = combined["Style Number"].apply(lambda x: f"<img src='{img_map.get(str(x).upper(), '')}' class='thumb'>" if str(img_map.get(str(x).upper(), '')).startswith("http") else "")
-
-with st.container(border=True):
-    st.markdown("**요약**")
-    cols = st.columns(4)
-    both_styles = ((combined["temu_qty"] > 0) & (combined["shein_qty"] > 0)).sum()
-    temu_strong = (combined["태그"] == "TEMU 강세").sum()
-    shein_strong = (combined["태그"] == "SHEIN 강세").sum()
-    total_styles = combined.shape[0]
-    with cols[0]:
-        st.metric("분석 스타일 수", f"{total_styles:,}")
-    with cols[1]:
-        st.metric("양 플랫폼 동시 판매", f"{both_styles:,}")
-    with cols[2]:
-        st.metric("TEMU 강세", f"{temu_strong:,}")
-    with cols[3]:
-        st.metric("SHEIN 강세", f"{shein_strong:,}")
+combined["이미지"] = combined["Style Number"].apply(lambda x: f"<img src='{IMG_MAP.get(str(x).upper(), '')}' class='thumb'>" if str(IMG_MAP.get(str(x).upper(), '')).startswith("http") else "")
 
 def action_hint(row):
     if row["태그"] == "TEMU 강세":
@@ -172,7 +155,8 @@ def action_hint(row):
     return "두 플랫폼 동일 전략 유지"
 combined["액션"] = combined.apply(action_hint, axis=1)
 
-st.dataframe(
+# Use st.data_editor for filter/sort with HTML rendering for images
+st.data_editor(
     combined.rename(columns={
         "temu_qty": "TEMU Qty",
         "temu_sales": "TEMU Sales",
@@ -182,5 +166,10 @@ st.dataframe(
         "shein_aov": "SHEIN AOV",
     }),
     use_container_width=True,
-    hide_index=True
+    hide_index=True,
+    column_config={
+        "이미지": st.column_config.Column("이미지", help="상품 이미지", width="small")
+    },
+    height=600,
+    disabled=True
 )

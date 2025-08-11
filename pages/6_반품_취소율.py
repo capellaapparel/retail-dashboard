@@ -6,15 +6,9 @@ import pandas as pd
 import re
 from dateutil import parser
 
-# -------------------------
-# Page Config & Title
-# -------------------------
 st.set_page_config(page_title="반품·취소율 분석", layout="wide")
 st.title("↩️ 반품·취소율 분석")
 
-# -------------------------
-# Helpers
-# -------------------------
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name: str) -> pd.DataFrame:
     import gspread
@@ -71,13 +65,11 @@ def style_key_from_label(label: str, img_map: dict) -> str | None:
             return k
     return None
 
-# 숫자 변환(금액/문자 섞임 방지)
-_money = lambda s: pd.to_numeric(s.astype(str).str.replace(r"[^0-9.\-]", "", regex=True),
-                                 errors="coerce").fillna(0.0)
+_money = lambda s: pd.to_numeric(
+    s.astype(str).str.replace(r"[^0-9.\-]", "", regex=True), errors="coerce"
+).fillna(0.0)
 
-# -------------------------
-# Load & normalize
-# -------------------------
+# ---------- Load ----------
 df_info  = load_google_sheet("PRODUCT_INFO")
 df_temu  = load_google_sheet("TEMU_SALES")
 df_shein = load_google_sheet("SHEIN_SALES")
@@ -89,91 +81,6 @@ df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 df_temu["order item status"]  = df_temu["order item status"].astype(str)
 df_temu["quantity shipped"]   = pd.to_numeric(df_temu.get("quantity shipped", 0), errors="coerce").fillna(0)
 df_temu["quantity purchased"] = pd.to_numeric(df_temu.get("quantity purchased", 0), errors="coerce").fillna(0)
+df_shein["order status"]      = df_shein["order status"].astype(str)
 
-df_shein["order status"] = df_shein["order status"].astype(str)
-
-# -------------------------
-# Date controls
-# -------------------------
-min_dt = pd.to_datetime(pd.concat([df_temu["order date"], df_shein["order date"]]).dropna()).min()
-max_dt = pd.to_datetime(pd.concat([df_temu["order date"], df_shein["order date"]]).dropna()).max()
-if pd.isna(min_dt) or pd.isna(max_dt):
-    st.info("날짜 데이터가 없습니다. 시트를 확인하세요.")
-    st.stop()
-
-dr = st.date_input(
-    "조회 기간",
-    value=(max_dt.date() - pd.Timedelta(days=29), max_dt.date()),
-    min_value=min_dt.date(),
-    max_value=max_dt.date(),
-)
-if isinstance(dr, (list, tuple)):
-    start, end = dr
-else:
-    start, end = dr, dr
-start = pd.to_datetime(start)
-end   = pd.to_datetime(end) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-
-# -------------------------
-# Controls (임계값/최소주문)
-# -------------------------
-c1, c2, c3, c4 = st.columns([2.2, 2.2, 2, 2])
-with c1:
-    min_orders = st.number_input("최소 주문 기준(노이즈 제거)", min_value=0, value=5, step=1)
-with c2:
-    st.caption("취소율 = (취소/환불) ÷ (출고+취소)")
-with c3:
-    temu_warn = st.slider("TEMU 취소율 경고 임계값", 0.0, 1.0, 0.25, 0.01)
-with c4:
-    shein_warn = st.slider("SHEIN 환불률 경고 임계값", 0.0, 1.0, 0.20, 0.01)
-
-# -------------------------
-# TEMU aggregate
-# -------------------------
-T = df_temu[(df_temu["order date"]>=start) & (df_temu["order date"]<=end)].copy()
-T["status"]    = T["order item status"].str.lower()
-T["style_key"] = T["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
-T = T.dropna(subset=["style_key"])
-
-T_shipped  = T[T["status"].isin(["shipped", "delivered"])].copy()
-T_canceled = T[T["status"].eq("canceled")].copy()
-
-T_g1 = T_shipped.groupby("style_key").agg(
-    shipped_qty=("quantity shipped","sum"),
-    shipped_orders=("product number","count")
-)
-T_g2 = T_canceled.groupby("style_key").agg(
-    canceled_qty=("quantity purchased","sum"),
-    canceled_orders=("product number","count")
-)
-T_tbl = pd.concat([T_g1, T_g2], axis=1).fillna(0)
-T_tbl["orders_total"] = (T_tbl["shipped_orders"] + T_tbl["canceled_orders"]).astype(int)
-T_tbl["cancel_rate"]  = (
-    T_tbl["canceled_qty"] / (T_tbl["shipped_qty"] + T_tbl["canceled_qty"]).replace(0, pd.NA)
-).fillna(0.0)
-T_tbl = T_tbl.reset_index().rename(columns={"style_key":"Style Number"})
-
-# KPI: TEMU 전체 취소율
-temu_total_rate = (
-    T_tbl["canceled_qty"].sum() /
-    max(T_tbl["shipped_qty"].sum() + T_tbl["canceled_qty"].sum(), 1)
-)
-
-# -------------------------
-# SHEIN aggregate
-# -------------------------
-S = df_shein[(df_shein["order date"]>=start) & (df_shein["order date"]<=end)].copy()
-S["status"]    = S["order status"].str.lower()
-S["style_key"] = S["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
-S = S.dropna(subset=["style_key"])
-
-S_ref = S[S["status"].eq("customer refunded")]
-S_non = S[~S["status"].eq("customer refunded")]
-
-S_g1 = S_non.groupby("style_key").agg(shipped_qty=("product description","count"))
-S_g2 = S_ref.groupby("style_key").agg(refunded_qty=("product description","count"))
-S_tbl = pd.concat([S_g1, S_g2], axis=1).fillna(0).astype({"shipped_qty":int, "refunded_qty":int})
-S_tbl["orders_total"] = (S_tbl["shipped_qty"] + S_tbl["refunded_qty"]).astype(int)
-S_tbl["refund_rate"]  = (
-    S_tbl["refunded_qty"] / (S_tbl["orders_total"]).replace(0, pd.NA)
-).f
+# ---------- Date controls ----------

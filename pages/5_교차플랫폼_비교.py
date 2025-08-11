@@ -207,15 +207,21 @@ with st.container(border=True):
 THUMB_H = 144  # px (원하면 120, 144 등으로 변경)
 st.markdown(f"""
 <style>
-[data-testid="stDataFrame"] img, [data-testid="stDataEditor"] img {{
-    height: {THUMB_H}px !important;
-    width: auto !important;
-    border-radius: 8px;
-    object-fit: cover;
+/* DataFrame/Editor 안의 이미지 크기 강제 */
+[data-testid="stDataFrame"] td img,
+[data-testid="stDataEditor"] td img {{
+    width: {THUMB}px !important;
+    height: {THUMB}px !important;
+    max-width: none !important;
+    max-height: none !important;
+    object-fit: cover !important;
+    border-radius: 10px;
+    display: block !important;
 }}
-/* 행 높이도 같이 키워서 이미지가 잘리지 않게 */
-[data-testid="stDataFrame"] [role="row"], [data-testid="stDataEditor"] [role="row"] {{
-    min-height: {THUMB_H + 14}px !important;
+/* 행 높이 확보 */
+[data-testid="stDataFrame"] [role="row"],
+[data-testid="stDataEditor"] [role="row"] {{
+    min-height: {THUMB + 16}px !important;
 }}
 </style>
 """, unsafe_allow_html=True)

@@ -204,23 +204,19 @@ with st.container(border=True):
 # Table (이미지 보이면서 헤더 정렬 가능)
 # -------------------------
 # 👉 썸네일 실제 크기 키우기(CSS). 컬럼 폭이 아니라 이미지 높이를 늘려야 커집니다.
-THUMB_H = 144  # px (원하면 120, 144 등으로 변경)
+THUMB = 144  # px (원하면 120, 144, 168 등으로 변경)
 st.markdown(f"""
 <style>
-/* DataFrame/Editor 안의 이미지 크기 강제 */
-[data-testid="stDataFrame"] td img,
-[data-testid="stDataEditor"] td img {{
-    width: {THUMB}px !important;
+[data-testid="stDataFrame"] img, [data-testid="stDataEditor"] img {{
     height: {THUMB}px !important;
+    width: {THUMB}px !important;
+    border-radius: 8px;
     max-width: none !important;
     max-height: none !important;
     object-fit: cover !important;
-    border-radius: 10px;
-    display: block !important;
 }}
-/* 행 높이 확보 */
-[data-testid="stDataFrame"] [role="row"],
-[data-testid="stDataEditor"] [role="row"] {{
+/* 행 높이도 같이 키워서 이미지가 잘리지 않게 */
+[data-testid="stDataFrame"] [role="row"], [data-testid="stDataEditor"] [role="row"] {{
     min-height: {THUMB + 16}px !important;
 }}
 </style>
@@ -248,18 +244,21 @@ st.dataframe(
     }),
     use_container_width=True,
     hide_index=True,
-    height=700,
+    height=640,
     column_config={
-        # ▶ 숫자 픽셀로 지정해야 실제 썸네일 렌더 크기를 계산합니다.
-        "이미지": st.column_config.ImageColumn("이미지", width=THUMB),
+        # 👉 이미지 더 크게
+        "이미지": st.column_config.ImageColumn("이미지", width="large"),
+        # 👉 정수 컬럼은 step=1
         "TEMU Qty":  st.column_config.NumberColumn("TEMU Qty",  format="%,d", step=1),
         "SHEIN Qty": st.column_config.NumberColumn("SHEIN Qty", format="%,d", step=1),
+        # 👉 금액/평균단가는 소수 허용(step=0.01) → 빨간 표시 제거 + 포맷 적용
         "TEMU Sales":  st.column_config.NumberColumn("TEMU Sales",  format="$%,.2f", step=0.01),
         "SHEIN Sales": st.column_config.NumberColumn("SHEIN Sales", format="$%,.2f", step=0.01),
         "TEMU AOV":    st.column_config.NumberColumn("TEMU AOV",    format="$%,.2f", step=0.01),
         "SHEIN AOV":   st.column_config.NumberColumn("SHEIN AOV",   format="$%,.2f", step=0.01),
     }
 )
+
 # -------------------------
 # Download CSV (원자료)
 # -------------------------

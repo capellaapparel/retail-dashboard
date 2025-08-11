@@ -1,16 +1,8 @@
-# ==========================================
-# File: pages/5_교차플랫폼_비교.py
-# ==========================================
+# pages/cross_platform_page.py
 import streamlit as st
 import pandas as pd
 import re
 from dateutil import parser
-
-# -------------------------
-# Page Config
-# -------------------------
-st.set_page_config(page_title="교차 플랫폼 비교", layout="wide")
-st.title("🔁 교차 플랫폼 성과 비교 (TEMU vs SHEIN)")
 
 # -------------------------
 # Helpers

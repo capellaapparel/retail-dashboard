@@ -1,24 +1,7 @@
+# streamlit_app.py
 import streamlit as st
-from style_info_page import style_info_page
-from sales_dashboard_page import sales_dashboard_page
-from cross_platform_page import cross_platform_page      # 5_교차플랫폼_비교.py의 함수
-from cancel_rate_page import cancel_rate_page            # 6_반품_취소율.py의 함수
 
-page = st.sidebar.radio(
-    "페이지 선택",
-    [
-        "📖 스타일 정보 조회",
-        "📊 세일즈 대시보드",
-        "🔁 교차 플랫폼 비교",
-        "↩️ 반품·취소율 분석"
-    ]
-)
+st.set_page_config(page_title="리테일 대시보드", layout="wide", initial_sidebar_state="expanded")
 
-if page == "📖 스타일 정보 조회":
-    style_info_page()
-elif page == "📊 세일즈 대시보드":
-    sales_dashboard_page()
-elif page == "🔁 교차 플랫폼 비교":
-    cross_platform_page()
-elif page == "↩️ 반품·취소율 분석":
-    cancel_rate_page()
+st.write("👈 왼쪽 메뉴에서 페이지를 선택하세요.")
+# 필요하면 간단한 공지/버전 정보만 표시해도 됨

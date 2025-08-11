@@ -67,10 +67,21 @@ df_shein = load_google_sheet("SHEIN_SALES")
 df_temu["order date"]  = df_temu["purchase date"].apply(parse_temudate)
 df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 
-# style_key & LIVE DATE 맵
+# style_key & LIVE DATE 시리즈(컬럼 없어도 안전하게)
 df_info["style_key"] = df_info["product number"].astype(str).map(_key)
-temu_live_map  = dict(zip(df_info["style_key"], pd.to_datetime(df_info.get("temu_live_date"),  errors="coerce")))
-shein_live_map = dict(zip(df_info["style_key"], pd.to_datetime(df_info.get("shein_live_date"), errors="coerce")))
+
+def _to_dt_series(df: pd.DataFrame, col: str) -> pd.Series:
+    c = col.lower().strip()
+    if c not in df.columns:
+        return pd.Series([pd.NaT]*len(df), index=df.index)
+    return pd.to_datetime(df[c], errors="coerce")
+
+temu_live_series  = _to_dt_series(df_info, "temu_live_date")   # 시트에서 TEMU_LIVE_DATE여도 OK (소문자화됨)
+shein_live_series = _to_dt_series(df_info, "shein_live_date")
+
+# 키 → 날짜 매핑
+temu_live_map  = dict(zip(df_info["style_key"],  temu_live_series))
+shein_live_map = dict(zip(df_info["style_key"], shein_live_series))
 
 img_dict = dict(zip(df_info["product number"].astype(str), df_info["image"]))
 
@@ -215,7 +226,7 @@ def classify(q30, q30_prev):
     else:
         return "", ""
 
-# ============== 레코드 빌드 (플랫폼 분리 & 미등록 제외 플래그) ==============
+# ============== 레코드 빌드 (플랫폼 분리 & 미등록 제외 플래그 + 90일 성숙 필터) ==============
 records = []
 now_ts = pd.Timestamp.now().normalize()
 for _, row in df_info.iterrows():
@@ -289,7 +300,6 @@ df_rec = pd.DataFrame(records)
 
 # ============== 보기: TEMU / SHEIN (미등록 제외 + 3개월 경과 필터) ==============
 platform_view = st.radio("플랫폼", options=["TEMU","SHEIN"], horizontal=True)
-
 MATURITY_DAYS = 90  # 업로드 후 3개월
 
 def highlight_price(val):

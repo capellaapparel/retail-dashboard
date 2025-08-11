@@ -1,9 +1,12 @@
+# ==========================================
+# File: pages/3_가격제안.py
+# ==========================================
 import streamlit as st
 import pandas as pd
 import numpy as np
 from dateutil import parser
 
-# ===================== 공통 유틸 =====================
+# ============== 공통 유틸 ==============
 def safe_float(x):
     try:
         if pd.isna(x): return np.nan
@@ -51,7 +54,7 @@ def load_google_sheet(sheet_name):
     df.columns = [c.lower().strip() for c in df.columns]
     return df
 
-# ===================== 데이터 로드 =====================
+# ============== 데이터 로드 ==============
 st.set_page_config(page_title="가격 제안 대시보드", layout="wide")
 st.title("💡 가격 제안 대시보드")
 
@@ -70,7 +73,7 @@ def to_erp(x):
     except: return np.nan
 df_info["erp price"] = df_info["erp price"].apply(to_erp)
 
-# ===================== 플랫폼별 현재가 (숫자) =====================
+# ============== 플랫폼별 현재가 (숫자) ==============
 def temu_now_num(style):
     vals = df_temu[df_temu["product number"].astype(str)==str(style)]["base price total"].apply(safe_float)
     vals = vals[vals>0]
@@ -81,42 +84,30 @@ def shein_now_num(style):
     vals = vals[vals>0]
     return float(vals.mean()) if len(vals)>0 else np.nan
 
-# ===================== 판매 집계 =====================
-def get_qty(df, style, days):
+# ============== 플랫폼별 판매 집계 (기간) ==============
+def get_qty_temu(style, days):
     now = pd.Timestamp.now()
     since = now - pd.Timedelta(days=days)
-    if "order date" not in df.columns: return 0
-    if "product number" in df.columns:
-        target = df["product number"].astype(str)==str(style)
-    else:
-        target = df["product description"].astype(str)==str(style)
-    d = df[target]
-    if "order item status" in d.columns:  # TEMU
-        d = d[d["order item status"].astype(str).str.lower().isin(["shipped","delivered"])]
-        qty_col = "quantity shipped"
-    else:
-        d = d[~d["order status"].astype(str).str.lower().isin(["customer refunded"])]
-        qty_col = None
+    d = df_temu[df_temu["product number"].astype(str)==str(style)].copy()
+    d = d[d["order item status"].astype(str).str.lower().isin(["shipped","delivered"])]
     d = d[(d["order date"]>=since) & (d["order date"]<=now)]
-    if qty_col:
-        return pd.to_numeric(d[qty_col], errors="coerce").fillna(0).sum()
-    else:
-        return d.shape[0]
+    return pd.to_numeric(d["quantity shipped"], errors="coerce").fillna(0).sum()
 
-# ===================== 플랫폼 설정 & 추천가 로직 =====================
+def get_qty_shein(style, days):
+    now = pd.Timestamp.now()
+    since = now - pd.Timedelta(days=days)
+    d = df_shein[df_shein["product description"].astype(str)==str(style)].copy()
+    d = d[~d["order status"].astype(str).str.lower().isin(["customer refunded"])]
+    d = d[(d["order date"]>=since) & (d["order date"]<=now)]
+    return d.shape[0]
+
+# ============== 추천가 로직 ==============
 PLATFORM_CFG = {
     "TEMU":  {"fee_rate":0.12, "extra_fee":0.0, "base_add":7, "min_add":2, "floor":9},
     "SHEIN": {"fee_rate":0.15, "extra_fee":0.0, "base_add":7, "min_add":2, "floor":9},
 }
 
 def suggest_price_platform(erp, cur_price, comp_prices, mode, cfg):
-    """
-    erp: float
-    cur_price: 현재 우리 플랫폼가(숫자, NaN 가능)
-    comp_prices: 경쟁 후보들(타플랫폼 현재가, 유사 평균 등) 숫자 리스트
-    mode: "new"|"slow"|"drop"|"hot"|"" 
-    cfg: {"fee_rate","min_add","base_add","floor"}
-    """
     base_min  = max(erp*(1+cfg["fee_rate"]) + cfg["min_add"], cfg["floor"])
     base_norm = max(erp*(1+cfg["fee_rate"]) + cfg["base_add"], cfg["floor"])
 
@@ -125,31 +116,27 @@ def suggest_price_platform(erp, cur_price, comp_prices, mode, cfg):
     best_comp  = min(comps) if comps else None
     worst_comp = max(comps) if comps else None
 
-    # 튜닝값
-    BEAT_BY_SLOW = 0.20     # 경쟁가보다 이만큼 싸게(슬로우/보통)
-    BEAT_BY_DROP = 0.50     # 급감은 더 크게
-    DISC_SLOW    = 0.03     # 현재가 대비 3% 인하(슬로우)
-    DISC_DROP    = 0.10     # 현재가 대비 10% 인하(급감)
-
-    UPLIFT_HOT_PCT  = 0.05  # 핫: 최소 5% 인상
-    UPLIFT_HOT_ABS  = 0.50  # 핫: 혹은 최소 +$0.5 인상
-    BEAT_UPWARDS    = 1.00  # 핫: 경쟁가를 +$1 넘겨서 적정가 앵커링
+    BEAT_BY_SLOW = 0.20
+    BEAT_BY_DROP = 0.50
+    DISC_SLOW    = 0.03
+    DISC_DROP    = 0.10
+    UPLIFT_HOT_PCT  = 0.05
+    UPLIFT_HOT_ABS  = 0.50
+    BEAT_UPWARDS    = 1.00
 
     def _floor(x): return max(base_min, x)
 
     if mode in ["new", "slow"]:
-        # 하향만(=상승 금지)
         cands = []
         if p_cur:     cands.append(p_cur * (1 - DISC_SLOW))
         if best_comp: cands.append(best_comp - BEAT_BY_SLOW)
         cands.append(base_norm)
         rec = min([c for c in cands if c and c > 0])
         rec = _floor(rec)
-        if p_cur and rec > p_cur:   # 절대 인상 금지
+        if p_cur and rec > p_cur:   # 상향 금지
             rec = p_cur
 
     elif mode == "drop":
-        # 더 강한 하향, 상승 금지
         cands = []
         if p_cur:     cands.append(p_cur * (1 - DISC_DROP))
         if best_comp: cands.append(best_comp - BEAT_BY_DROP)
@@ -160,7 +147,6 @@ def suggest_price_platform(erp, cur_price, comp_prices, mode, cfg):
             rec = p_cur
 
     elif mode == "hot":
-        # ✅ 인상 강제: 절대 현재가 미만으로 내려가지 않음
         targets = []
         if p_cur:
             targets.append(p_cur * (1 + UPLIFT_HOT_PCT))
@@ -168,16 +154,11 @@ def suggest_price_platform(erp, cur_price, comp_prices, mode, cfg):
         if worst_comp:
             targets.append(worst_comp + BEAT_UPWARDS)
         targets.append(base_norm)
-
         rec = max([t for t in targets if t and t > 0])
         rec = _floor(rec)
-
-        # 혹시라도 계산상 하향이 나오면 현재가보다 조금이라도 올려서 강제 인상
         if p_cur and rec < p_cur:
             rec = _floor(max(p_cur + UPLIFT_HOT_ABS, p_cur*(1+UPLIFT_HOT_PCT)))
-
     else:
-        # 보통: 상향 금지, 경쟁가 살짝 하회
         cands = []
         if p_cur:     cands.append(p_cur)
         if best_comp: cands.append(best_comp - BEAT_BY_SLOW)
@@ -189,7 +170,6 @@ def suggest_price_platform(erp, cur_price, comp_prices, mode, cfg):
 
     return round(rec, 2)
 
-# ===================== 유사 스타일 평균가(간단) =====================
 def similar_avg(style):
     tem = df_temu[df_temu["product number"].astype(str)!=str(style)]["base price total"].apply(safe_float)
     sh  = df_shein[df_shein["product description"].astype(str)!=str(style)]["product price"].apply(safe_float)
@@ -198,80 +178,109 @@ def similar_avg(style):
     if sh.notna().mean()>0:  pool.append(sh.mean())
     return np.nanmean(pool) if pool else np.nan
 
-# ===================== 레코드 빌드 =====================
+def classify(q30, q30_prev):
+    if q30 == 0:
+        return "new", "한 번도 팔리지 않음"
+    elif q30 <= 2:
+        return "slow", "판매 1~2건 이하 (슬로우셀러)"
+    elif q30_prev >= 2*q30 and q30 > 0:
+        return "drop", "판매 급감 (직전 30일대비 50%↓)"
+    elif q30 >= 10 and q30 > q30_prev:
+        return "hot", "최근 30일 판매 급증, 가격 인상 추천"
+    else:
+        return "", ""
+
+# ============== 레코드 빌드 (플랫폼 분리) ==============
 records = []
 for _, row in df_info.iterrows():
     style = str(row["product number"])
     erp   = row["erp price"]
     img   = img_dict.get(style, "")
 
-    qty30      = get_qty(df_temu, style, 30) + get_qty(df_shein, style, 30)
-    qty30_prev = (get_qty(df_temu, style, 60) + get_qty(df_shein, style, 60)) - qty30
-    qty_all    = get_qty(df_temu, style, 9999) + get_qty(df_shein, style, 9999)
+    # TEMU
+    t_cur  = temu_now_num(style)
+    t_30   = int(get_qty_temu(style, 30))
+    t_60   = int(get_qty_temu(style, 60))
+    t_30p  = t_60 - t_30
+    t_all  = int(get_qty_temu(style, 9999))
+    mode_t, why_t = classify(t_30, t_30p)
 
-    if qty30 == 0:
-        mode, why = "new", "한 번도 팔리지 않음"
-    elif qty30 <= 2:
-        mode, why = "slow", "판매 1~2건 이하 (슬로우셀러)"
-    elif qty30_prev >= 2*qty30 and qty30 > 0:
-        mode, why = "drop", "판매 급감 (직전 30일대비 50%↓)"
-    elif qty30 >= 10 and qty30 > qty30_prev:
-        mode, why = "hot", "최근 30일 판매 급증, 가격 인상 추천"
-    else:
-        mode, why = "", ""
+    # SHEIN
+    s_cur  = shein_now_num(style)
+    s_30   = int(get_qty_shein(style, 30))
+    s_60   = int(get_qty_shein(style, 60))
+    s_30p  = s_60 - s_30
+    s_all  = int(get_qty_shein(style, 9999))
+    mode_s, why_s = classify(s_30, s_30p)
 
-    t_cur = temu_now_num(style)
-    s_cur = shein_now_num(style)
     sim   = similar_avg(style)
 
-    rec_temu  = suggest_price_platform(erp, t_cur, [s_cur, sim], mode, PLATFORM_CFG["TEMU"])
-    rec_shein = suggest_price_platform(erp, s_cur, [t_cur, sim], mode, PLATFORM_CFG["SHEIN"])
+    rec_t = suggest_price_platform(erp, t_cur, [s_cur, sim], mode_t, PLATFORM_CFG["TEMU"])
+    rec_s = suggest_price_platform(erp, s_cur, [t_cur, sim], mode_s, PLATFORM_CFG["SHEIN"])
 
     records.append({
         "이미지": make_img_tag(img),
         "Style Number": style,
         "ERP Price": show_price(erp),
+
+        # TEMU
         "TEMU 현재가": show_price(t_cur),
+        "추천가_TEMU": show_price(rec_t),
+        "30일판매_TEMU": t_30,
+        "이전30일_TEMU": t_30p,
+        "전체판매_TEMU": t_all,
+        "사유_TEMU": why_t,
+        "mode_TEMU": mode_t,
+
+        # SHEIN
         "SHEIN 현재가": show_price(s_cur),
-        "추천가_TEMU": show_price(rec_temu),
-        "추천가_SHEIN": show_price(rec_shein),
-        "30일판매": int(qty30),
-        "이전30일": int(qty30_prev),
-        "전체판매": int(qty_all),
-        "사유": why,
-        "mode": mode
+        "추천가_SHEIN": show_price(rec_s),
+        "30일판매_SHEIN": s_30,
+        "이전30일_SHEIN": s_30p,
+        "전체판매_SHEIN": s_all,
+        "사유_SHEIN": why_s,
+        "mode_SHEIN": mode_s,
     })
 
 df_rec = pd.DataFrame(records)
 
-# ===================== 보기: TEMU / SHEIN =====================
+# ============== 보기: TEMU / SHEIN ==============
 platform_view = st.radio("플랫폼", options=["TEMU","SHEIN"], horizontal=True)
 
-# 추천가 하이라이트 스타일
 def highlight_price(val):
     if val not in ["-", None, ""] and not pd.isna(val):
         return 'background-color:#d4edda; color:#155724; font-weight:700;'
     return ''
 
-def display_table(df, comment, platform_view):
+def display_table(df, comment, platform_view, mode_col, cols):
+    show = df[cols].copy()
+    st.markdown(f"**{comment}**")
     if platform_view == "TEMU":
-        show = df[["이미지","Style Number","ERP Price","TEMU 현재가","추천가_TEMU","30일판매","이전30일","전체판매","사유"]]
         styled = show.style.applymap(highlight_price, subset=["추천가_TEMU"])
     else:
-        show = df[["이미지","Style Number","ERP Price","SHEIN 현재가","추천가_SHEIN","30일판매","이전30일","전체판매","사유"]]
         styled = show.style.applymap(highlight_price, subset=["추천가_SHEIN"])
-
-    st.markdown(f"**{comment}**")
     st.write(styled.to_html(escape=False, index=False), unsafe_allow_html=True)
 
-# ===================== 탭 (선택된 플랫폼만 출력) =====================
 tabs = st.tabs(["🆕 판매 없음", "🟠 판매 저조", "📉 판매 급감", "🔥 가격 인상 추천"])
 
-with tabs[0]:
-    display_table(df_rec[df_rec["mode"]=="new"],  "판매 기록 없는 신상/미판매 스타일 (동종 평균가 반영해 최소선 제시)", platform_view)
-with tabs[1]:
-    display_table(df_rec[df_rec["mode"]=="slow"], "판매 1~2건 이하 슬로우셀러 (경쟁가 하회 + 현재가 인상 금지)", platform_view)
-with tabs[2]:
-    display_table(df_rec[df_rec["mode"]=="drop"], "판매 급감(직전30일대비 50%↓) 스타일 (강한 할인, 인상 금지)", platform_view)
-with tabs[3]:
-    display_table(df_rec[df_rec["mode"]=="hot"],  "판매 증가 핫아이템 (최소 5% 또는 $0.5 인상, 경쟁가+α)", platform_view)
+if platform_view == "TEMU":
+    base_cols = ["이미지","Style Number","ERP Price","TEMU 현재가","추천가_TEMU","30일판매_TEMU","이전30일_TEMU","전체판매_TEMU","사유_TEMU"]
+    with tabs[0]:
+        display_table(df_rec[df_rec["mode_TEMU"]=="new"],  "TEMU 미판매/신규 (동종 평균가 참고해 최소선 제시)", "TEMU", "mode_TEMU", base_cols)
+    with tabs[1]:
+        display_table(df_rec[df_rec["mode_TEMU"]=="slow"], "TEMU 슬로우셀러 (경쟁가 하회 + 현재가 인상 금지)", "TEMU", "mode_TEMU", base_cols)
+    with tabs[2]:
+        display_table(df_rec[df_rec["mode_TEMU"]=="drop"], "TEMU 판매 급감 (강한 할인, 인상 금지)", "TEMU", "mode_TEMU", base_cols)
+    with tabs[3]:
+        display_table(df_rec[df_rec["mode_TEMU"]=="hot"],  "TEMU 핫아이템 (최소 5% 또는 $0.5 인상, 경쟁가+α)", "TEMU", "mode_TEMU", base_cols)
+
+else:
+    base_cols = ["이미지","Style Number","ERP Price","SHEIN 현재가","추천가_SHEIN","30일판매_SHEIN","이전30일_SHEIN","전체판매_SHEIN","사유_SHEIN"]
+    with tabs[0]:
+        display_table(df_rec[df_rec["mode_SHEIN"]=="new"],  "SHEIN 미판매/신규 (동종 평균가 참고해 최소선 제시)", "SHEIN", "mode_SHEIN", base_cols)
+    with tabs[1]:
+        display_table(df_rec[df_rec["mode_SHEIN"]=="slow"], "SHEIN 슬로우셀러 (경쟁가 하회 + 현재가 인상 금지)", "SHEIN", "mode_SHEIN", base_cols)
+    with tabs[2]:
+        display_table(df_rec[df_rec["mode_SHEIN"]=="drop"], "SHEIN 판매 급감 (강한 할인, 인상 금지)", "SHEIN", "mode_SHEIN", base_cols)
+    with tabs[3]:
+        display_table(df_rec[df_rec["mode_SHEIN"]=="hot"],  "SHEIN 핫아이템 (최소 5% 또는 $0.5 인상, 경쟁가+α)", "SHEIN", "mode_SHEIN", base_cols)

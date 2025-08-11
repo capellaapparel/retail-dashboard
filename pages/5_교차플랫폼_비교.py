@@ -203,6 +203,22 @@ with st.container(border=True):
 # -------------------------
 # Table (이미지 보이면서 헤더 정렬 가능)
 # -------------------------
+# 👉 썸네일 실제 크기 키우기(CSS). 컬럼 폭이 아니라 이미지 높이를 늘려야 커집니다.
+THUMB_H = 96  # px (원하면 120, 144 등으로 변경)
+st.markdown(f"""
+<style>
+[data-testid="stDataFrame"] img, [data-testid="stDataEditor"] img {{
+    height: {THUMB_H}px !important;
+    width: auto !important;
+    border-radius: 8px;
+    object-fit: cover;
+}}
+/* 행 높이도 같이 키워서 이미지가 잘리지 않게 */
+[data-testid="stDataFrame"] [role="row"], [data-testid="stDataEditor"] [role="row"] {{
+    min-height: {THUMB_H + 14}px !important;
+}}
+</style>
+""", unsafe_allow_html=True)
 # URL 컬럼 생성 (ImageColumn용)
 combined["image_url"] = combined["Style Number"].apply(lambda x: IMG_MAP.get(str(x).upper(), ""))
 

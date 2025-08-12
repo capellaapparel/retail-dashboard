@@ -8,11 +8,18 @@ from streamlit.components.v1 import html as html_component
 # =========================
 # Page & CSS
 # =========================
-def render_print_button():
-    # 프린트 시 불필요한 UI 숨김 + 페이지 여백/줄바꿈
+    
+    st.set_page_config(page_title="세일즈 대시보드", layout="wide")
+st.title("세일즈 대시보드")
+# ====== PRINT BUTTON (우측 상단 고정) ======
+from streamlit.components.v1 import html as html_component
+
+def inject_print_css():
     st.markdown("""
     <style>
+      /* 인쇄 시 숨길 것들 */
       @media print {
+        /* 좌측 사이드바/툴바/헤더/풋터 + 입력 위젯류 전부 숨김 */
         [data-testid="stSidebar"],
         [data-testid="stToolbar"],
         header, footer,
@@ -25,18 +32,20 @@ def render_print_button():
         [data-testid="stSegmentedControl"],
         [data-testid="stPills"] { display:none !important; }
 
+        /* 본문 여백 줄이기 + 박스들 페이지 분리 방지 */
         .block-container { padding-top: 0 !important; }
         .cap-card, .best-card, .stContainer {
           break-inside: avoid; page-break-inside: avoid;
         }
+
         @page { size: A4 portrait; margin: 10mm; }
       }
 
       /* 우측 상단 고정 프린트 버튼 */
       .print-fab {
         position: fixed;
-        top: 12px;                 /* 필요하면 조정 */
-        right: 18px;               /* 필요하면 조정 */
+        top: 12px;              /* 필요 시 위치 조정 */
+        right: 18px;            /* 필요 시 위치 조정 */
         z-index: 10000;
         background: #1f6feb;
         color: #fff;
@@ -52,15 +61,15 @@ def render_print_button():
     </style>
     """, unsafe_allow_html=True)
 
-    # 실제 프린트 버튼 (부모 문서 인쇄)
-     html_component("""
-      <button class="print-fab" onclick="parent.window.print()" title="프린트">
-        🖨️ 프린트
-      </button>
+def render_print_button():
+    # 컴포넌트 iframe 안에서 버튼을 띄우고, 인쇄는 parent 윈도우에서 실행
+    html_component("""
+      <button class="print-fab" onclick="parent.window.print()" title="프린트">🖨️ 프린트</button>
     """, height=0)
-    
-    st.set_page_config(page_title="세일즈 대시보드", layout="wide")
-st.title("세일즈 대시보드")
+# ====== /PRINT BUTTON ======
+# title 다음 줄 정도에 넣기
+inject_print_css()
+render_print_button()
 
 st.markdown("""
 <style>

@@ -3,13 +3,53 @@ import streamlit as st
 import pandas as pd
 import re
 from dateutil import parser
+from streamlit.components.v1 import html as html_component
 
 # =========================
 # Page & CSS
 # =========================
-st.set_page_config(page_title="세일즈 대시보드", layout="wide")
-st.title("세일즈 대시보드")
+def render_print_button():
+    # 프린트 전용 스타일 (필터/버튼/헤더/사이드바 숨김 + 페이지 마진/줄바꿈)
+    st.markdown("""
+    <style>
+      @media print {
+        /* 불필요한 UI 숨김 */
+        [data-testid="stSidebar"],
+        [data-testid="stToolbar"],
+        header, footer,
+        .stButton, .stDownloadButton,
+        [data-testid="stRadio"],
+        [data-testid="stDateInput"],
+        [data-testid="stSelectbox"],
+        [data-testid="stMultiSelect"],
+        [data-testid="stSlider"],
+        [data-testid="stSegmentedControl"],
+        [data-testid="stPills"] { display:none !important; }
 
+        /* 본문 여백/줄바꿈 */
+        .block-container { padding-top: 0 !important; }
+        .cap-card, .best-card, .stContainer {
+          break-inside: avoid; page-break-inside: avoid;
+        }
+        @page { size: A4 portrait; margin: 10mm; }
+      }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # 실제 프린트 버튼 (부모 문서 인쇄)
+    html_component("""
+      <div style="text-align:right; margin:-8px 0 8px 0;">
+        <button onclick="parent.window.print()" style="
+          background:#1f6feb; color:#fff; border:none; padding:8px 14px;
+          border-radius:8px; cursor:pointer; font-weight:600;">
+          🖨️ 프린트
+        </button>
+      </div>
+    """, height=48)
+    
+    st.set_page_config(page_title="세일즈 대시보드", layout="wide")
+st.title("세일즈 대시보드")
+render_print_button()  # ← 추가
 st.markdown("""
 <style>
 /* 공통 카드 */

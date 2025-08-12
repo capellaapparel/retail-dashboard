@@ -4,47 +4,30 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import re
 from dateutil import parser
 
-# ===================== 공통 유틸 =====================
-def safe_float(x):
-    try:
-        if pd.isna(x): return np.nan
-        return float(str(x).replace("$","").replace(",",""))
-    except:
-        return np.nan
+# -------------------- 기본 설정 --------------------
+st.set_page_config(page_title="가격 제안 대시보드", layout="wide")
+st.title("💡 가격 제안 대시보드")
 
-def show_price(val):
-    try:
-        x = float(val)
-        if pd.isna(x): return "-"
-        return f"${x:,.2f}"
-    except:
-        return "-" if (val is None or val=="" or pd.isna(val)) else str(val)
+TODAY = pd.Timestamp.today().normalize()
+MATURITY_DAYS = 90  # 성숙 기준: 최근 3개월 고정
+MATURITY_CUTOFF = TODAY - pd.Timedelta(days=MATURITY_DAYS)
 
-def make_img_tag(url):
-    if pd.notna(url) and str(url).startswith("http"):
-        return f"<img src='{url}' style='width:56px;height:auto;border-radius:8px;'>"
-    return ""
-
-def parse_temudate(dt):
-    try: return parser.parse(str(dt).split('(')[0].strip(), fuzzy=True)
-    except Exception: return pd.NaT
-
-def parse_sheindate(dt):
-    try: return pd.to_datetime(str(dt), errors="coerce", infer_datetime_format=True)
-    except Exception: return pd.NaT
-
+# -------------------- 유틸 --------------------
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_name):
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
     import json
     GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
-    scope = ["https://spreadsheets.google.com/feeds","https://www.googleapis.com/auth/drive"]
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+    ]
     json_data = {k: str(v) for k, v in st.secrets["gcp_service_account"].items()}
-    with open("/tmp/service_account.json","w") as f: json.dump(json_data, f)
+    with open("/tmp/service_account.json", "w") as f:
+        json.dump(json_data, f)
     creds = ServiceAccountCredentials.from_json_keyfile_name("/tmp/service_account.json", scope)
     client = gspread.authorize(creds)
     ws = client.open_by_url(GOOGLE_SHEET_URL).worksheet(sheet_name)
@@ -52,131 +35,76 @@ def load_google_sheet(sheet_name):
     df.columns = [c.lower().strip() for c in df.columns]
     return df
 
-def _key(s): return str(s).upper().replace(" ", "")
-def _norm(s: str) -> str: return re.sub(r"[^a-z0-9]", "", str(s).lower())
+def parse_temudate(dt):
+    try:
+        s = str(dt).split("(")[0].strip()
+        return parser.parse(s, fuzzy=True)
+    except Exception:
+        return pd.NaT
 
-# ---- LIVE_DATE 컬럼 느슨 매칭 (여러 케이스 자동 감지) ----
-def _pick_live_col(df: pd.DataFrame, vendor: str) -> str | None:
-    want_v = _norm(vendor)  # 'temu' / 'shein'
-    cand = []
-    for c in df.columns:
-        n = _norm(c)
-        if want_v in n and "live" in n:
-            score = 0
-            if "date" in n: score += 3
-            if "dt"   in n: score += 2
-            if "da"   in n: score += 1
-            cand.append((score, len(n), c))
-    # fallback: 아주 흔한 표기들
-    fallback = {
-        "temu":  ["temu_live_date","temu_live_da","temulivedate","temuliveda"],
-        "shein": ["shein_live_date","shein_live_da","sheinlivedate","sheinliveda"],
-    }
-    for f in fallback.get(vendor, []):
-        if f in df.columns:
-            cand.append((10, len(f), f))
-    if not cand:
-        return None
-    cand.sort(key=lambda x: (x[0], x[1]), reverse=True)
-    return cand[0][2]
+def parse_sheindate(dt):
+    try:
+        return pd.to_datetime(str(dt), errors="coerce", infer_datetime_format=True)
+    except Exception:
+        return pd.NaT
 
-def _to_dt_by_vendor(df: pd.DataFrame, vendor: str) -> tuple[pd.Series, str | None]:
-    hit = _pick_live_col(df, vendor)
-    if hit is None:
-        return pd.Series([pd.NaT]*len(df), index=df.index), None
-    return pd.to_datetime(df[hit], errors="coerce"), hit
+def money_to_float(series: pd.Series) -> pd.Series:
+    """$ , 문자 등 제거 후 숫자 변환"""
+    return pd.to_numeric(series.astype(str).str.replace(r"[^0-9.\-]", "", regex=True),
+                         errors="coerce")
 
-# ===================== 페이지 & 데이터 로드 =====================
-st.set_page_config(page_title="가격 제안 대시보드", layout="wide")
-st.title("💡 가격 제안 대시보드")
+def show_price(val):
+    try:
+        x = float(val)
+        if pd.isna(x):
+            return "-"
+        return f"${x:,.2f}"
+    except Exception:
+        return "-" if (val is None or val == "" or pd.isna(val)) else str(val)
 
+def make_img_tag(url):
+    if pd.notna(url) and str(url).startswith("http"):
+        return f"<img src='{url}' style='width:56px;height:auto;border-radius:8px;'>"
+    return ""
+
+# -------------------- 데이터 로드 & 정규화 --------------------
 df_info  = load_google_sheet("PRODUCT_INFO")
 df_temu  = load_google_sheet("TEMU_SALES")
 df_shein = load_google_sheet("SHEIN_SALES")
 
+# style key & 이미지 맵
+df_info["style_key"] = df_info.get("product number", "").astype(str)
+IMG_MAP = dict(zip(df_info["style_key"], df_info.get("image", "")))
+
+# LIVE DATE (사용자 시트에 TEMU_LIVE_DATE / SHEIN_LIVE_DATE 로 있다고 가정)
+df_info["temu_live_date"]  = pd.to_datetime(df_info.get("temu_live_date"),  errors="coerce", infer_datetime_format=True)
+df_info["shein_live_date"] = pd.to_datetime(df_info.get("shein_live_date"), errors="coerce", infer_datetime_format=True)
+
+# 주문 일자
 df_temu["order date"]  = df_temu["purchase date"].apply(parse_temudate)
 df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 
-df_info["style_key"] = df_info["product number"].astype(str).map(_key)
-img_dict = dict(zip(df_info["product number"].astype(str), df_info["image"]))
+# 상태/수량/금액 숫자화
+df_temu["order item status"]  = df_temu["order item status"].astype(str)
+df_temu["quantity shipped"]   = pd.to_numeric(df_temu.get("quantity shipped", 0), errors="coerce").fillna(0)
+df_temu["base price total"]   = money_to_float(df_temu.get("base price total", pd.Series(dtype=object))).fillna(0.0)
 
-# ERP price 정규화
-def to_erp(x):
-    try: return float(str(x).replace("$","").replace(",",""))
-    except: return np.nan
-df_info["erp price"] = df_info["erp price"].apply(to_erp)
+df_shein["order status"] = df_shein["order status"].astype(str)
+df_shein["product price"] = money_to_float(df_shein.get("product price", pd.Series(dtype=object))).fillna(0.0)
 
-# LIVE DATE 시리즈 & 실제 컬럼명
-temu_live_ser,   temu_live_col   = _to_dt_by_vendor(df_info, "temu")
-shein_live_ser,  shein_live_col  = _to_dt_by_vendor(df_info, "shein")
-temu_live_map  = dict(zip(df_info["style_key"],  temu_live_ser))
-shein_live_map = dict(zip(df_info["style_key"], shein_live_ser))
-
-# ===================== 상단 컨트롤 (등록일 조회기간 + 플랫폼 + 성숙기준) =====================
-with st.container(border=True):
-    st.markdown("**진단**")
-    cols = st.columns(4)
-    with cols[0]:
-        st.metric("TEMU 등록 스타일", int(temu_live_ser.notna().sum()))
-        st.caption(f"↳ live col: **{temu_live_col or '감지 실패'}**")
-    with cols[1]:
-        st.metric("SHEIN 등록 스타일", int(shein_live_ser.notna().sum()))
-        st.caption(f"↳ live col: **{shein_live_col or '감지 실패'}**")
-
-# 등록일 범위(등록일 기준)
-reg_min = pd.to_datetime(pd.concat([temu_live_ser, shein_live_ser]).dropna()).min()
-reg_max = pd.to_datetime(pd.concat([temu_live_ser, shein_live_ser]).dropna()).max()
-if pd.isna(reg_min) or pd.isna(reg_max):
-    reg_min = pd.Timestamp.today() - pd.Timedelta(days=365)
-    reg_max = pd.Timestamp.today()
-
-cA, cB, cC = st.columns([1.4, 0.8, 0.8])
-with cA:
-    dr = st.date_input(
-        "등록일 기준 조회 기간",
-        value=(reg_min.date(), reg_max.date()),
-        min_value=reg_min.date(),
-        max_value=reg_max.date()
-    )
-    if isinstance(dr, (list, tuple)):
-        REG_START, REG_END = dr
-    else:
-        REG_START, REG_END = dr, dr
-    REG_START = pd.to_datetime(REG_START)
-    REG_END   = pd.to_datetime(REG_END) + pd.Timedelta(hours=23, minutes=59, seconds=59)
-with cB:
-    platform_view = st.radio("플랫폼", options=["TEMU","SHEIN"], horizontal=True)
-with cC:
-    MATURITY_DAYS = st.slider("성숙 기준(일)", min_value=0, max_value=180, value=90, step=5)
-APPLY_MATURITY = st.checkbox("성숙 기준 적용", value=False)
-
-# ===================== 판매 집계 함수 (주문일 기준) =====================
-def get_qty_temu(style, days):
-    key = _key(style)
-    live = temu_live_map.get(key, pd.NaT)
-    if pd.isna(live): return 0
-    now = pd.Timestamp.now(); since = max(now - pd.Timedelta(days=days), live)
-    d = df_temu[df_temu["product number"].astype(str)==str(style)].copy()
-    d = d[d["order item status"].astype(str).str.lower().isin(["shipped","delivered"])]
-    d = d[(d["order date"]>=since) & (d["order date"]<=now)]
-    return pd.to_numeric(d["quantity shipped"], errors="coerce").fillna(0).sum()
-
-def get_qty_shein(style, days):
-    key = _key(style)
-    live = shein_live_map.get(key, pd.NaT)
-    if pd.isna(live): return 0
-    now = pd.Timestamp.now(); since = max(now - pd.Timedelta(days=days), live)
-    d = df_shein[df_shein["product description"].astype(str)==str(style)].copy()
-    d = d[~d["order status"].astype(str).str.lower().isin(["customer refunded"])]
-    d = d[(d["order date"]>=since) & (d["order date"]<=now)]
-    return d.shape[0]
-
+# -------------------- 플랫폼 설정 & 추천가 로직 --------------------
 PLATFORM_CFG = {
     "TEMU":  {"fee_rate":0.12, "extra_fee":0.0, "base_add":7, "min_add":2, "floor":9},
     "SHEIN": {"fee_rate":0.15, "extra_fee":0.0, "base_add":7, "min_add":2, "floor":9},
 }
 
 def suggest_price_platform(erp, cur_price, comp_prices, mode, cfg):
+    """
+    erp: float
+    cur_price: 현재가(숫자)
+    comp_prices: 경쟁 후보들(리스트)
+    mode: "new"|"slow"|"drop"|"hot"|"" 
+    """
     base_min  = max(erp*(1+cfg["fee_rate"]) + cfg["min_add"], cfg["floor"])
     base_norm = max(erp*(1+cfg["fee_rate"]) + cfg["base_add"], cfg["floor"])
 
@@ -189,6 +117,7 @@ def suggest_price_platform(erp, cur_price, comp_prices, mode, cfg):
     BEAT_BY_DROP = 0.50
     DISC_SLOW    = 0.03
     DISC_DROP    = 0.10
+
     UPLIFT_HOT_PCT  = 0.05
     UPLIFT_HOT_ABS  = 0.50
     BEAT_UPWARDS    = 1.00
@@ -202,7 +131,7 @@ def suggest_price_platform(erp, cur_price, comp_prices, mode, cfg):
         cands.append(base_norm)
         rec = min([c for c in cands if c and c > 0])
         rec = _floor(rec)
-        if p_cur and rec > p_cur:   # 상향 금지
+        if p_cur and rec > p_cur:
             rec = p_cur
 
     elif mode == "drop":
@@ -223,10 +152,12 @@ def suggest_price_platform(erp, cur_price, comp_prices, mode, cfg):
         if worst_comp:
             targets.append(worst_comp + BEAT_UPWARDS)
         targets.append(base_norm)
+
         rec = max([t for t in targets if t and t > 0])
         rec = _floor(rec)
         if p_cur and rec < p_cur:
             rec = _floor(max(p_cur + UPLIFT_HOT_ABS, p_cur*(1+UPLIFT_HOT_PCT)))
+
     else:
         cands = []
         if p_cur:     cands.append(p_cur)
@@ -239,147 +170,142 @@ def suggest_price_platform(erp, cur_price, comp_prices, mode, cfg):
 
     return round(rec, 2)
 
-def similar_avg(style):
-    tem = df_temu[df_temu["product number"].astype(str)!=str(style)]["base price total"].apply(safe_float)
-    sh  = df_shein[df_shein["product description"].astype(str)!=str(style)]["product price"].apply(safe_float)
-    pool = []
-    if tem.notna().mean()>0: pool.append(tem.mean())
-    if sh.notna().mean()>0:  pool.append(sh.mean())
-    return np.nanmean(pool) if pool else np.nan
-
-def classify(q30, q30_prev):
-    if q30 == 0:
-        return "new", "한 번도 팔리지 않음"
-    elif q30 <= 2:
-        return "slow", "판매 1~2건 이하 (슬로우셀러)"
-    elif q30_prev >= 2*q30 and q30 > 0:
-        return "drop", "판매 급감 (직전 30일대비 50%↓)"
-    elif q30 >= 10 and q30 > q30_prev:
-        return "hot", "최근 30일 판매 급증, 가격 인상 추천"
+# -------------------- 판매 집계 함수 --------------------
+def qty_last_n_days(df, style_col, style, days, status_col=None, shipped_values=None):
+    now  = TODAY + pd.Timedelta(hours=23, minutes=59, seconds=59)
+    since = TODAY - pd.Timedelta(days=days)
+    d = df[df[style_col].astype(str) == str(style)].copy()
+    if status_col and shipped_values:
+        d = d[d[status_col].astype(str).str.lower().isin([s.lower() for s in shipped_values])]
+    d = d[(d["order date"] >= since) & (d["order date"] <= now)]
+    if "quantity shipped" in d.columns:
+        return pd.to_numeric(d["quantity shipped"], errors="coerce").fillna(0).sum()
     else:
-        return "", ""
+        return len(d)  # SHEIN 건수
 
-# ===================== 레코드 빌드 =====================
+def total_qty(df, style_col, style, status_col=None, shipped_values=None):
+    d = df[df[style_col].astype(str) == str(style)].copy()
+    if status_col and shipped_values:
+        d = d[d[status_col].astype(str).str.lower().isin([s.lower() for s in shipped_values])]
+    if "quantity shipped" in d.columns:
+        return pd.to_numeric(d["quantity shipped"], errors="coerce").fillna(0).sum()
+    else:
+        return len(d)
+
+def current_price_mean(df, style_col, style, price_col):
+    ser = df[df[style_col].astype(str) == str(style)][price_col]
+    ser = pd.to_numeric(ser, errors="coerce")
+    ser = ser[ser > 0]
+    return float(ser.mean()) if not ser.empty else np.nan
+
+# -------------------- 플랫폼 라디오 --------------------
+platform_view = st.radio("플랫폼", options=["TEMU","SHEIN"], horizontal=True)
+
+# -------------------- 성숙 90일 고정 안내 --------------------
+with st.expander("진단", expanded=True):
+    if platform_view == "TEMU":
+        cnt_mature = df_info["temu_live_date"].notna().sum()
+        st.caption(f"TEMU 라이브 입력 수: {cnt_mature:,}")
+    else:
+        cnt_mature = df_info["shein_live_date"].notna().sum()
+        st.caption(f"SHEIN 라이브 입력 수: {cnt_mature:,}")
+    st.caption(f"성숙 기준: 등록 후 **{MATURITY_DAYS}일** 경과 상품만 분석")
+
+# -------------------- 레코드 빌드 --------------------
 records = []
-now_ts = pd.Timestamp.now().normalize()
 for _, row in df_info.iterrows():
-    style = str(row["product number"]); s_key = _key(style)
-    erp   = row["erp price"]; img = img_dict.get(style, "")
+    style = str(row.get("style_key"))
+    erp   = pd.to_numeric(str(row.get("erp price", "")).replace("$","").replace(",",""), errors="coerce")
+    img   = IMG_MAP.get(style, "")
 
-    temu_live  = temu_live_map.get(s_key, pd.NaT)
-    shein_live = shein_live_map.get(s_key, pd.NaT)
-    temu_registered  = pd.notna(temu_live)
-    shein_registered = pd.notna(shein_live)
+    # 플랫폼별 live date 확인 + 등록 90일 경과 필터 (등록 안됨/90일 미만이면 제외)
+    if platform_view == "TEMU":
+        live_dt = row.get("temu_live_date")
+        if pd.isna(live_dt) or (live_dt > MATURITY_CUTOFF):
+            continue  # 제외
+        # 판매 집계
+        qty30      = qty_last_n_days(df_temu, "product number", style, 30,
+                                     status_col="order item status", shipped_values=["shipped","delivered"])
+        qty30_prev = qty_last_n_days(df_temu, "product number", style, 60,
+                                     status_col="order item status", shipped_values=["shipped","delivered"]) - qty30
+        qty_all    = total_qty(df_temu, "product number", style,
+                               status_col="order item status", shipped_values=["shipped","delivered"])
+        cur_price  = current_price_mean(df_temu, "product number", style, "base price total")
+        comp_price = current_price_mean(df_shein, "product description", style, "product price")
 
-    days_since_temu  = int((now_ts - temu_live).days)  if temu_registered  else None
-    days_since_shein = int((now_ts - shein_live).days) if shein_registered else None
+    else:  # SHEIN
+        live_dt = row.get("shein_live_date")
+        if pd.isna(live_dt) or (live_dt > MATURITY_CUTOFF):
+            continue  # 제외
+        qty30      = qty_last_n_days(df_shein, "product description", style, 30)
+        qty30_prev = qty_last_n_days(df_shein, "product description", style, 60) - qty30
+        qty_all    = total_qty(df_shein, "product description", style)
+        cur_price  = current_price_mean(df_shein, "product description", style, "product price")
+        comp_price = current_price_mean(df_temu, "product number", style, "base price total")
 
-    # TEMU
-    if temu_registered:
-        t_cur  = safe_float(df_temu[df_temu["product number"].astype(str)==style]["base price total"].mean())
-        t_30   = int(get_qty_temu(style, 30))
-        t_60   = int(get_qty_temu(style, 60))
-        t_30p  = t_60 - t_30
-        t_all  = int(get_qty_temu(style, 9999))
-        mode_t, why_t = classify(t_30, t_30p)
-        rec_t = suggest_price_platform(erp, t_cur, [], mode_t, PLATFORM_CFG["TEMU"])
+    # 분류
+    if qty30 == 0 and qty_all == 0:
+        mode, why = "new", "등록 90일 경과했지만 판매 기록 없음"
+    elif qty30 <= 2:
+        mode, why = "slow", "최근 30일 판매 1~2건 이하 (슬로우셀러)"
+    elif qty30_prev >= 2*qty30 and qty30 > 0:
+        mode, why = "drop", "최근 30일 판매 급감 (직전 30일 대비 50%↓)"
+    elif qty30 >= 10 and qty30 > qty30_prev:
+        mode, why = "hot", "최근 30일 판매 증가 (가격 인상 후보)"
     else:
-        t_cur = t_30 = t_60 = t_30p = t_all = np.nan
-        mode_t = ""; why_t = ""; rec_t = np.nan
+        mode, why = "", ""
 
-    # SHEIN
-    if shein_registered:
-        s_cur  = safe_float(df_shein[df_shein["product description"].astype(str)==style]["product price"].mean())
-        s_30   = int(get_qty_shein(style, 30))
-        s_60   = int(get_qty_shein(style, 60))
-        s_30p  = s_60 - s_30
-        s_all  = int(get_qty_shein(style, 9999))
-        mode_s, why_s = classify(s_30, s_30p)
-        rec_s = suggest_price_platform(erp, s_cur, [], mode_s, PLATFORM_CFG["SHEIN"])
-    else:
-        s_cur = s_30 = s_60 = s_30p = s_all = np.nan
-        mode_s = ""; why_s = ""; rec_s = np.nan
+    # 추천가 계산(동일 플랫폼 기준, 경쟁가는 반대 플랫폼 평균가로 사용)
+    cfg = PLATFORM_CFG[platform_view]
+    rec_price = suggest_price_platform(erp, cur_price, [comp_price], mode, cfg)
 
     records.append({
         "이미지": make_img_tag(img),
         "Style Number": style,
         "ERP Price": show_price(erp),
-
-        # 등록/경과일
-        "temu_registered": temu_registered,
-        "shein_registered": shein_registered,
-        "temu_live_date": temu_live,
-        "shein_live_date": shein_live,
-        "days_since_temu": days_since_temu,
-        "days_since_shein": days_since_shein,
-
-        # TEMU
-        "TEMU 현재가": show_price(t_cur),
-        "추천가_TEMU": show_price(rec_t),
-        "30일판매_TEMU": 0 if pd.isna(t_30) else int(t_30),
-        "이전30일_TEMU": 0 if pd.isna(t_30p) else int(t_30p),
-        "전체판매_TEMU": 0 if pd.isna(t_all) else int(t_all),
-        "사유_TEMU": why_t,
-        "mode_TEMU": mode_t,
-
-        # SHEIN
-        "SHEIN 현재가": show_price(s_cur),
-        "추천가_SHEIN": show_price(rec_s),
-        "30일판매_SHEIN": 0 if pd.isna(s_30) else int(s_30),
-        "이전30일_SHEIN": 0 if pd.isna(s_30p) else int(s_30p),
-        "전체판매_SHEIN": 0 if pd.isna(s_all) else int(s_all),
-        "사유_SHEIN": why_s,
-        "mode_SHEIN": mode_s,
+        f"{platform_view} 현재가": show_price(cur_price),
+        f"추천가_{platform_view}": show_price(rec_price),
+        "30일판매": int(qty30),
+        "이전30일": int(qty30_prev),
+        "전체판매": int(qty_all),
+        "사유": why,
+        "mode": mode
     })
 
 df_rec = pd.DataFrame(records)
 
-# ===================== 표시(플랫폼별) - 등록일 범위 필터 + 성숙 기준 =====================
-def display_table(df, comment, platform_view, cols, price_col):
-    st.markdown(f"**{comment}**")
+# -------------------- 표 렌더 --------------------
+def highlight_price(val):
+    if val not in ["-", None, ""] and not pd.isna(val):
+        return 'background-color:#d4edda; color:#155724; font-weight:700;'
+    return ''
+
+def display_table(df, comment):
+    cols = ["이미지","Style Number","ERP Price",
+            f"{platform_view} 현재가", f"추천가_{platform_view}",
+            "30일판매","이전30일","전체판매","사유"]
     if df.empty:
         st.info("표시할 데이터가 없습니다.")
         return
     styled = df[cols].style.applymap(
-        lambda v: 'background-color:#d4edda; color:#155724; font-weight:700;' if v not in ["-","","None"] else '',
-        subset=[price_col]
+        highlight_price, subset=[f"추천가_{platform_view}"]
     )
+    st.markdown(f"**{comment}**")
     st.write(styled.to_html(escape=False, index=False), unsafe_allow_html=True)
 
-if platform_view == "TEMU":
-    view = df_rec[df_rec["temu_registered"]].copy()
-    # 등록일 범위 필터 (등록일 기준)
-    view = view[view["temu_live_date"].between(REG_START, REG_END, inclusive="both")]
-    # 성숙 기준
-    if APPLY_MATURITY:
-        view = view[view["days_since_temu"].fillna(0) >= MATURITY_DAYS]
+st.markdown("""
+<style>
+[data-testid="stMarkdownContainer"] table { width: 100% !important; }
+</style>
+""", unsafe_allow_html=True)
 
-    base_cols = ["이미지","Style Number","ERP Price","TEMU 현재가","추천가_TEMU",
-                 "30일판매_TEMU","이전30일_TEMU","전체판매_TEMU","사유_TEMU"]
-    tabs = st.tabs(["🆕 판매 없음", "🟠 판매 저조", "📉 판매 급감", "🔥 가격 인상 추천"])
-    with tabs[0]:
-        display_table(view[view["mode_TEMU"].eq("new")],  "TEMU 미판매/신규", "TEMU", base_cols, "추천가_TEMU")
-    with tabs[1]:
-        display_table(view[view["mode_TEMU"].eq("slow")], "TEMU 슬로우셀러", "TEMU", base_cols, "추천가_TEMU")
-    with tabs[2]:
-        display_table(view[view["mode_TEMU"].eq("drop")], "TEMU 판매 급감", "TEMU", base_cols, "추천가_TEMU")
-    with tabs[3]:
-        display_table(view[view["mode_TEMU"].eq("hot")],  "TEMU 핫아이템", "TEMU", base_cols, "추천가_TEMU")
+tabs = st.tabs(["🟥 미판매(등록 90일↑)", "🟠 판매 저조", "📉 판매 급감", "🔥 가격 인상 추천"])
 
-else:
-    view = df_rec[df_rec["shein_registered"]].copy()
-    view = view[view["shein_live_date"].between(REG_START, REG_END, inclusive="both")]
-    if APPLY_MATURITY:
-        view = view[view["days_since_shein"].fillna(0) >= MATURITY_DAYS]
-
-    base_cols = ["이미지","Style Number","ERP Price","SHEIN 현재가","추천가_SHEIN",
-                 "30일판매_SHEIN","이전30일_SHEIN","전체판매_SHEIN","사유_SHEIN"]
-    tabs = st.tabs(["🆕 판매 없음", "🟠 판매 저조", "📉 판매 급감", "🔥 가격 인상 추천"])
-    with tabs[0]:
-        display_table(view[view["mode_SHEIN"].eq("new")],  "SHEIN 미판매/신규", "SHEIN", base_cols, "추천가_SHEIN")
-    with tabs[1]:
-        display_table(view[view["mode_SHEIN"].eq("slow")], "SHEIN 슬로우셀러", "SHEIN", base_cols, "추천가_SHEIN")
-    with tabs[2]:
-        display_table(view[view["mode_SHEIN"].eq("drop")], "SHEIN 판매 급감", "SHEIN", base_cols, "추천가_SHEIN")
-    with tabs[3]:
-        display_table(view[view["mode_SHEIN"].eq("hot")],  "SHEIN 핫아이템", "SHEIN", base_cols, "추천가_SHEIN")
+with tabs[0]:
+    display_table(df_rec[df_rec["mode"]=="new"],   "등록 90일 경과 & 판매 0건 (노출/카테고리/키워드 전면 점검)")
+with tabs[1]:
+    display_table(df_rec[df_rec["mode"]=="slow"],  "최근 30일 1~2건 이하 (경쟁가 하회 + 현재가 인상 금지)")
+with tabs[2]:
+    display_table(df_rec[df_rec["mode"]=="drop"],  "직전 30일 대비 50%↓ (강한 할인, 인상 금지)")
+with tabs[3]:
+    display_table(df_rec[df_rec["mode"]=="hot"],   "판매 증가 핫아이템 (최소 5% 또는 $0.5 인상, 경쟁가+α)")

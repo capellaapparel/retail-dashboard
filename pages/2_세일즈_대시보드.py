@@ -9,11 +9,10 @@ from streamlit.components.v1 import html as html_component
 # Page & CSS
 # =========================
 def render_print_button():
-    # 프린트 전용 스타일 (필터/버튼/헤더/사이드바 숨김 + 페이지 마진/줄바꿈)
+    # 프린트 시 불필요한 UI 숨김 + 페이지 여백/줄바꿈
     st.markdown("""
     <style>
       @media print {
-        /* 불필요한 UI 숨김 */
         [data-testid="stSidebar"],
         [data-testid="stToolbar"],
         header, footer,
@@ -26,26 +25,39 @@ def render_print_button():
         [data-testid="stSegmentedControl"],
         [data-testid="stPills"] { display:none !important; }
 
-        /* 본문 여백/줄바꿈 */
         .block-container { padding-top: 0 !important; }
         .cap-card, .best-card, .stContainer {
           break-inside: avoid; page-break-inside: avoid;
         }
         @page { size: A4 portrait; margin: 10mm; }
       }
+
+      /* 우측 상단 고정 프린트 버튼 */
+      .print-fab {
+        position: fixed;
+        top: 12px;                 /* 필요하면 조정 */
+        right: 18px;               /* 필요하면 조정 */
+        z-index: 10000;
+        background: #1f6feb;
+        color: #fff;
+        border: none;
+        padding: 10px 14px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 600;
+        box-shadow: 0 4px 10px rgba(0,0,0,.15);
+      }
+      .print-fab:hover { filter: brightness(1.05); }
+      @media print { .print-fab { display: none !important; } }
     </style>
     """, unsafe_allow_html=True)
 
     # 실제 프린트 버튼 (부모 문서 인쇄)
-    html_component("""
-      <div style="text-align:right; margin:-8px 0 8px 0;">
-        <button onclick="parent.window.print()" style="
-          background:#1f6feb; color:#fff; border:none; padding:8px 14px;
-          border-radius:8px; cursor:pointer; font-weight:600;">
-          🖨️ 프린트
-        </button>
-      </div>
-    """, height=48)
+     html_component("""
+      <button class="print-fab" onclick="parent.window.print()" title="프린트">
+        🖨️ 프린트
+      </button>
+    """, height=0)
     
     st.set_page_config(page_title="세일즈 대시보드", layout="wide")
 st.title("세일즈 대시보드")

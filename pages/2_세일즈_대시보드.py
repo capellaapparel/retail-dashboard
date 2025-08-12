@@ -8,21 +8,19 @@ from streamlit.components.v1 import html as html_component
 # =========================
 # Page & CSS
 # =========================
-    
-    st.set_page_config(page_title="세일즈 대시보드", layout="wide")
+st.set_page_config(page_title="세일즈 대시보드", layout="wide")
 st.title("세일즈 대시보드")
-# ====== PRINT BUTTON (우측 상단 고정) ======
-from streamlit.components.v1 import html as html_component
 
+# ====== PRINT BUTTON (우측 상단 고정) ======
 def inject_print_css():
     st.markdown("""
     <style>
-      /* 인쇄 시 숨길 것들 */
+      /* 인쇄 시 숨길 요소들 */
       @media print {
-        /* 좌측 사이드바/툴바/헤더/풋터 + 입력 위젯류 전부 숨김 */
         [data-testid="stSidebar"],
         [data-testid="stToolbar"],
         header, footer,
+        .print-fab,
         .stButton, .stDownloadButton,
         [data-testid="stRadio"],
         [data-testid="stDateInput"],
@@ -32,20 +30,16 @@ def inject_print_css():
         [data-testid="stSegmentedControl"],
         [data-testid="stPills"] { display:none !important; }
 
-        /* 본문 여백 줄이기 + 박스들 페이지 분리 방지 */
         .block-container { padding-top: 0 !important; }
-        .cap-card, .best-card, .stContainer {
-          break-inside: avoid; page-break-inside: avoid;
-        }
-
+        .cap-card, .best-card, .stContainer { break-inside: avoid; page-break-inside: avoid; }
         @page { size: A4 portrait; margin: 10mm; }
       }
 
       /* 우측 상단 고정 프린트 버튼 */
       .print-fab {
         position: fixed;
-        top: 12px;              /* 필요 시 위치 조정 */
-        right: 18px;            /* 필요 시 위치 조정 */
+        top: 12px;
+        right: 18px;
         z-index: 10000;
         background: #1f6feb;
         color: #fff;
@@ -62,14 +56,14 @@ def inject_print_css():
     """, unsafe_allow_html=True)
 
 def render_print_button():
-    # 컴포넌트 iframe 안에서 버튼을 띄우고, 인쇄는 parent 윈도우에서 실행
     html_component("""
       <button class="print-fab" onclick="parent.window.print()" title="프린트">🖨️ 프린트</button>
     """, height=0)
-# ====== /PRINT BUTTON ======
-# title 다음 줄 정도에 넣기
+
+# 인쇄 CSS/버튼 주입
 inject_print_css()
 render_print_button()
+# ====== /PRINT BUTTON ======
 
 st.markdown("""
 <style>
@@ -305,7 +299,7 @@ else:
     p_sold = pd.concat([d1p, d2p], ignore_index=True)
 
 # =========================
-# 5) KPI (네이티브 컨테이너로 박스 보장)
+# 5) KPI
 # =========================
 def _delta_str(now, prev):
     if prev in (0, None) or pd.isna(prev): return "—"
@@ -313,7 +307,7 @@ def _delta_str(now, prev):
     sign = "+" if pct >= 0 else ""
     return f"{sign}{pct:.1f}%"
 
-st.subheader("")  # 상단 여백용(있어도/없어도 됨)
+st.subheader("")  # 상단 여백용
 with st.container(border=True):
     cols = st.columns(4, gap="small")
     with cols[0]:
@@ -326,14 +320,12 @@ with st.container(border=True):
         st.metric("Canceled Order", f"{int(cancel_qty):,}", _delta_str(cancel_qty, pcancel))
 
 # =========================
-# =========================
-# 6) Insights (풍성하게)
+# 6) Insights
 # =========================
 def _pc(cur, prev):
     if prev in (0, None) or pd.isna(prev): return None
     return (cur - prev) / prev * 100.0
 
-# Top10 비교
 def get_bestseller_labels(platform, df_sold, s, e):
     if platform == "TEMU":
         best = df_sold.groupby("product number")["quantity shipped"].sum().sort_values(ascending=False).head(10)
@@ -479,6 +471,5 @@ def best_table(platform, df_sold, s, e):
 
 best_df = best_table(platform, df_sold, start, end)
 
-# ✅ 불필요한 HTML 래퍼 제거 → 빈 네모 사라짐
 with st.container(border=True):
     st.markdown(best_df.to_html(escape=False, index=False), unsafe_allow_html=True)

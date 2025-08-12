@@ -61,7 +61,7 @@ def render_print_button():
     
     st.set_page_config(page_title="세일즈 대시보드", layout="wide")
 st.title("세일즈 대시보드")
-render_print_button()  # ← 추가
+
 st.markdown("""
 <style>
 /* 공통 카드 */

@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 import re
 from dateutil import parser
-from streamlit.components.v1 import html as html_component
 
 # =========================
 # Page & CSS
@@ -11,59 +10,51 @@ from streamlit.components.v1 import html as html_component
 st.set_page_config(page_title="세일즈 대시보드", layout="wide")
 st.title("세일즈 대시보드")
 
-# ====== PRINT BUTTON (우측 상단 고정) ======
-def inject_print_css():
-    st.markdown("""
-    <style>
-      /* 인쇄 시 숨길 요소들 */
-      @media print {
-        [data-testid="stSidebar"],
-        [data-testid="stToolbar"],
-        header, footer,
-        .print-fab,
-        .stButton, .stDownloadButton,
-        [data-testid="stRadio"],
-        [data-testid="stDateInput"],
-        [data-testid="stSelectbox"],
-        [data-testid="stMultiSelect"],
-        [data-testid="stSlider"],
-        [data-testid="stSegmentedControl"],
-        [data-testid="stPills"] { display:none !important; }
+# 🔸 페이지 오른쪽 상단 고정 프린트 버튼 + 프린트 최적화 CSS
+st.markdown("""
+<style>
+/* floating print button (top-right) */
+#floating-print {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 1000;
+}
+#floating-print button {
+  all: unset;
+  background: #1f6feb;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(31,111,235,.25);
+}
+#floating-print button:hover { filter: brightness(.95); }
 
-        .block-container { padding-top: 0 !important; }
-        .cap-card, .best-card, .stContainer { break-inside: avoid; page-break-inside: avoid; }
-        @page { size: A4 portrait; margin: 10mm; }
-      }
+/* 프린트 용 최적화 */
+@media print {
+  /* 기본 툴바/사이드바 숨김 */
+  #floating-print, [data-testid="stToolbar"] { display: none !important; }
+  header, footer { visibility: hidden; height: 0 !important; }
+  [data-testid="stSidebar"] { display: none !important; }
+  .stApp { overflow: visible !important; }
+  section.main { padding: 0 !important; }
 
-      /* 우측 상단 고정 프린트 버튼 */
-      .print-fab {
-        position: fixed;
-        top: 12px;
-        right: 18px;
-        z-index: 10000;
-        background: #1f6feb;
-        color: #fff;
-        border: none;
-        padding: 10px 14px;
-        border-radius: 10px;
-        cursor: pointer;
-        font-weight: 600;
-        box-shadow: 0 4px 10px rgba(0,0,0,.15);
-      }
-      .print-fab:hover { filter: brightness(1.05); }
-      @media print { .print-fab { display: none !important; } }
-    </style>
-    """, unsafe_allow_html=True)
+  /* 끊김 방지 */
+  .stMarkdown, .stDataFrame, .stTable, .stMetric,
+  .stPlotlyChart, .stAltairChart, .plot-container, .element-container {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 
-def render_print_button():
-    html_component("""
-      <button class="print-fab" onclick="parent.window.print()" title="프린트">🖨️ 프린트</button>
-    """, height=0)
-
-# 인쇄 CSS/버튼 주입
-inject_print_css()
-render_print_button()
-# ====== /PRINT BUTTON ======
+  @page { size: A4; margin: 10mm; } /* 필요 시 여백 조절 */
+}
+</style>
+<div id="floating-print">
+  <button onclick="window.print()">🖨️ 프린트</button>
+</div>
+""", unsafe_allow_html=True)
 
 st.markdown("""
 <style>

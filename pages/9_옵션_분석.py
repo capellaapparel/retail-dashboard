@@ -1,15 +1,14 @@
 # ==========================================
 # File: pages/9_옵션_분석.py
-# (도넛 조각 라벨 + 카테고리/컬러/사이즈 분석)
 # ==========================================
-import streamlit as st
-import pandas as pd
-import altair as alt
 import re
+import pandas as pd
+import streamlit as st
+import plotly.graph_objects as go
 from dateutil import parser
 
 st.set_page_config(page_title="옵션 · 카테고리 분석", layout="wide")
-st.title("❎ 옵션 · 카테고리 분석")
+st.title("🧩 옵션 · 카테고리 분석")
 
 # -------------------------
 # Helpers
@@ -20,11 +19,9 @@ def load_google_sheet(sheet_name: str) -> pd.DataFrame:
     from oauth2client.service_account import ServiceAccountCredentials
     import json
     GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    scope = ["https://spreadsheets.google.com/feeds","https://www.googleapis.com/auth/drive"]
     creds_json = {k: str(v) for k, v in st.secrets["gcp_service_account"].items()}
-    with open("/tmp/service_account.json", "w") as f:
-        import json as _json
-        _json.dump(creds_json, f)
+    with open("/tmp/service_account.json","w") as f: json.dump(creds_json, f)
     creds = ServiceAccountCredentials.from_json_keyfile_name("/tmp/service_account.json", scope)
     client = gspread.authorize(creds)
     ws = client.open_by_url(GOOGLE_SHEET_URL).worksheet(sheet_name)
@@ -32,70 +29,33 @@ def load_google_sheet(sheet_name: str) -> pd.DataFrame:
     df.columns = [c.lower().strip() for c in df.columns]
     return df
 
-STYLE_RE = re.compile(r"\b([A-Z]{1,3}\d{3,5}[A-Z0-9]?)\b")
-
 def parse_temudate(x):
     s = str(x)
-    if "(" in s:
-        s = s.split("(")[0].strip()
-    try:
-        return parser.parse(s, fuzzy=True)
-    except Exception:
-        return pd.NaT
+    if "(" in s: s = s.split("(")[0].strip()
+    try: return parser.parse(s, fuzzy=True)
+    except Exception: return pd.NaT
 
 def parse_sheindate(x):
-    try:
-        return pd.to_datetime(str(x), errors="coerce", infer_datetime_format=True)
-    except Exception:
-        return pd.NaT
+    try: return pd.to_datetime(str(x), errors="coerce", infer_datetime_format=True)
+    except Exception: return pd.NaT
 
-def money_clean(series: pd.Series) -> pd.Series:
-    return pd.to_numeric(series.astype(str).str.replace(r"[^0-9.\-]", "", regex=True), errors="coerce").fillna(0.0)
-
-def build_img_map(info: pd.DataFrame) -> dict:
-    keys = info.get("product number", pd.Series(dtype=str)).astype(str).str.upper().str.replace(" ", "", regex=False)
-    return dict(zip(keys, info.get("image", "")))
-
-def style_key_from_label(label: str, img_map: dict) -> str | None:
-    s = str(label).strip().upper()
-    if not s:
-        return None
-    s_key = s.replace(" ", "")
-    if s_key in img_map:
-        return s_key
-    m = STYLE_RE.search(s)
-    if m:
-        cand = m.group(1).replace(" ", "")
-        if cand in img_map:
-            return cand
-    # 느슨한 포함 매칭
-    for k in img_map.keys():
-        if k in s_key:
-            return k
-    return None
+def _money(s: pd.Series) -> pd.Series:
+    return (s.astype(str).str.replace(r"[^0-9.\-]", "", regex=True)
+            .replace("", pd.NA).astype(float))
 
 # -------------------------
-# Load
+# Load & normalize
 # -------------------------
 info  = load_google_sheet("PRODUCT_INFO")
 temu  = load_google_sheet("TEMU_SALES")
 shein = load_google_sheet("SHEIN_SALES")
 
-IMG_MAP = build_img_map(info)
-
-# normalize dates
-temu["order date"]  = temu["purchase date"].apply(parse_temudate)
+temu["order date"] = temu["purchase date"].apply(parse_temudate)
 shein["order date"] = shein["order processed on"].apply(parse_sheindate)
 
-# normalize numerics
-temu["order item status"] = temu["order item status"].astype(str)
+temu["order item status"] = temu["order item status"].astype(str).str.lower()
 temu["quantity shipped"]  = pd.to_numeric(temu.get("quantity shipped", 0), errors="coerce").fillna(0)
-if "base price total" in temu.columns:
-    temu["base price total"] = money_clean(temu["base price total"])
-
-shein["order status"]   = shein["order status"].astype(str)
-if "product price" in shein.columns:
-    shein["product price"] = money_clean(shein["product price"])
+shein["order status"]     = shein["order status"].astype(str).str.lower()
 
 # -------------------------
 # Controls
@@ -103,8 +63,8 @@ if "product price" in shein.columns:
 min_dt = pd.to_datetime(pd.concat([temu["order date"], shein["order date"]]).dropna()).min()
 max_dt = pd.to_datetime(pd.concat([temu["order date"], shein["order date"]]).dropna()).max()
 
-cL, cR = st.columns([1.3, 1])
-with cL:
+r1, r2 = st.columns([1.6, 1])
+with r1:
     dr = st.date_input(
         "조회 기간",
         value=(max_dt.date() - pd.Timedelta(days=29), max_dt.date()),
@@ -117,244 +77,195 @@ with cL:
         start, end = dr, dr
     start = pd.to_datetime(start)
     end   = pd.to_datetime(end) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-with cR:
+with r2:
     platform = st.radio("플랫폼", ["BOTH", "TEMU", "SHEIN"], horizontal=True, index=0)
 
 # -------------------------
-# Style → Category mapping
-# LENGTH 값을 이용한 1차 분류 + TEMU 상품명에서 JUMPSUIT/ROMPER 보정
-# SET 규칙: LENGTH에 TOP + (SKIRT or PANTS) 조합이거나 항목 2개 이상이면 SET
+# Category mapping
 # -------------------------
-TOP_KEYS   = {"CROP TOP","WAIST TOP","LONG TOP"}
-DRESS_KEYS = {"MINI DRESS","MIDI DRESS","MAXI DRESS"}
-SKIRT_KEYS = {"MINI SKIRT","MIDI SKIRT","MAXI SKIRT"}
-# 바텀 길이 키워드(팬츠/점프/롬퍼 길이로 공용)
-BOTTOM_KEYS = {"SHORTS","KNEE","CAPRI","FULL"}
+TOP_TOKENS   = {"CROP TOP","WAIST TOP","LONG TOP"}
+DRESS_TOKENS = {"MINI DRESS","MIDI DRESS","MAXI DRESS"}
+SKIRT_TOKENS = {"MINI SKIRT","MIDI SKIRT","MAXI SKIRT"}
+PANTS_TOKENS = {"SHORTS","KNEE","CAPRI","FULL"}
 
-def normalize_length_tokens(s):
-    toks = []
-    for p in re.split(r"[;,/]|(?<!\w)\s{2,}", str(s).upper()):
-        p = p.strip()
-        if not p:
-            continue
-        toks.append(p)
-    # 콤마 기반 분리도 추가
-    if len(toks) == 1 and "," in str(s):
-        toks = [x.strip().upper() for x in str(s).split(",")]
-    return [t for t in toks if t]
+def detect_cat_from_length(length_str: str) -> str:
+    items = [s.strip().upper() for s in str(length_str).split(",") if s.strip()]
+    has_top   = any(x in TOP_TOKENS for x in items)
+    has_dress = any(x in DRESS_TOKENS for x in items)
+    has_skirt = any(x in SKIRT_TOKENS for x in items)
+    has_pants = any(x in PANTS_TOKENS for x in items)
 
-# TEMU 상품명(주문기준)에서 점프/롬퍼 힌트
-temu_title_map = {}
-if "product name by customer order" in temu.columns:
-    tmap = temu.groupby(temu["product number"].astype(str))["product name by customer order"] \
-               .agg(lambda x: " ".join([str(v) for v in x if pd.notna(v)])[:300]) \
-               .to_dict()
-    # 키 표준화
-    temu_title_map = {str(k).upper().replace(" ",""): str(v).upper() for k,v in tmap.items()}
-
-def infer_category(style_key: str, length_val: str) -> str:
-    # 1) length 기반
-    toks = set(normalize_length_tokens(length_val))
-    has_top   = len(TOP_KEYS & toks)   > 0
-    has_dress = len(DRESS_KEYS & toks) > 0
-    has_skirt = len(SKIRT_KEYS & toks) > 0
-    has_bottom_len = len(BOTTOM_KEYS & toks) > 0
-
-    # SET: (TOP + (SKIRT 또는 바텀)) 이거나 토큰 2개 이상
-    if has_top and (has_skirt or has_bottom_len) or len(toks) >= 2:
+    # 세트: 옵션이 2개 이상이면서 Top+Skirt / Top+Pants 유형
+    if len(items) >= 2 and has_top and (has_skirt or has_pants):
         return "SET"
+    if has_dress: return "DRESS"
+    if has_top:   return "TOP"
+    if has_skirt: return "SKIRT"
+    if has_pants: return "PANTS"
+    return "OTHER"
 
-    if has_dress:
-        return "DRESS"
-    if has_skirt:
-        return "SKIRT"
-    if has_top:
-        return "TOP"
+# TEMU 상품명에 JUMPSUIT/ROMPER가 있으면 우선 반영
+def detect_jr_from_temu_name(name: str) -> str|None:
+    s = str(name).upper()
+    if "JUMPSUIT" in s: return "JUMPSUIT"
+    if "ROMPER"   in s: return "ROMPER"
+    return None
 
-    # 바텀 길이인데 점프/롬퍼인지 판정
-    if has_bottom_len:
-        # TEMU 상품명에서 보정
-        title = temu_title_map.get(style_key, "")
-        if "ROMPER" in title:
-            return "ROMPER"
-        if "JUMPSUIT" in title:
-            return "JUMPSUIT"
-        return "PANTS"
-
-    # 기본은 OTHER → 집계에선 거의 없도록
-    return "PANTS"
-
-# style → category dict
-style_to_cat = {}
-info_keys = info.get("product number", pd.Series(dtype=str)).astype(str).str.upper().str.replace(" ","",regex=False)
-for style_key, length_val in zip(info_keys, info.get("length","")):
-    style_to_cat[style_key] = infer_category(style_key, length_val)
+# 제품별 기본 카테고리
+info["_base_cat"] = info["length"].apply(detect_cat_from_length)
 
 # -------------------------
-# 판매 행 만들기 (플랫폼/기간/상태 필터)
-# 컬러/사이즈 정규화
+# Build sold rows (기간/플랫폼 필터)
 # -------------------------
-SIZE_MAP = {
-    "SMALL":"S", "MEDIUM":"M", "LARGE":"L",
-    "1XL":"1X", "2XL":"2X", "3XL":"3X",
-}
-def norm_size(s):
-    t = str(s).upper().strip()
-    t = t.replace(" ", "")
-    t = SIZE_MAP.get(t, t)
-    if t in {"1XL","2XL","3XL"}:
-        t = t.replace("XL","X")
-    return t
+T = temu[(temu["order date"]>=start)&(temu["order date"]<=end)].copy()
+T = T[T["order item status"].isin(["shipped","delivered"])]
+T["qty"] = T["quantity shipped"].astype(float)
 
-def norm_color(s):
-    t = str(s).strip().replace("_"," ").title()
-    return t
+S = shein[(shein["order date"]>=start)&(shein["order date"]<=end)].copy()
+S = S[~S["order status"].eq("customer refunded")]
+S["qty"] = 1.0
 
-rows = []
+if platform == "TEMU":
+    S = S.iloc[0:0]
+elif platform == "SHEIN":
+    T = T.iloc[0:0]
 
-# TEMU
-if platform in ["BOTH","TEMU"]:
-    t = temu[(temu["order date"]>=start) & (temu["order date"]<=end)].copy()
-    t = t[t["order item status"].str.lower().isin(["shipped","delivered"])]
-    t["qty"] = t["quantity shipped"].fillna(0)
-    t["style_key"] = t["product number"].astype(str).str.upper().str.replace(" ","",regex=False)
-
-    # 컬러/사이즈 컬럼 명칭 보정 (있을 때만)
-    col_color = "color" if "color" in t.columns else None
-    col_size  = "size"  if "size"  in t.columns else None
-    for _, r in t.iterrows():
-        style = r["style_key"]
-        cat   = style_to_cat.get(style, "PANTS")
-        color = norm_color(r[col_color]) if col_color else ""
-        size  = norm_size(r[col_size])   if col_size  else ""
-        qty   = float(r["qty"] or 0)
-        sales = float(r.get("base price total", 0.0) or 0.0)
-        rows.append(("TEMU", style, cat, color, size, qty, sales))
-
-# SHEIN
-if platform in ["BOTH","SHEIN"]:
-    s = shein[(shein["order date"]>=start) & (shein["order date"]<=end)].copy()
-    s = s[~s["order status"].str.lower().eq("customer refunded")]
-    s["qty"] = 1.0
-    # 스타일 매칭
-    s["style_key"] = s["product description"].apply(lambda x: style_key_from_label(x, IMG_MAP))
-
-    # Seller SKU 파싱: SKU-COLOR-SIZE
-    seller_col = "seller sku" if "seller sku" in s.columns else None
-    def parse_seller(x):
-        if pd.isna(x):
-            return ("","")
-        parts = str(x).split("-")
-        if len(parts) >= 3:
-            color = norm_color(parts[-2])
-            size  = norm_size(parts[-1])
-            return (color, size)
-        return ("","")
-
-    if seller_col:
-        tmp = s[s["style_key"].notna()].copy()
-        cs = tmp[seller_col].apply(parse_seller)
-        tmp["color"] = [c for c,_ in cs]
-        tmp["size"]  = [z for _,z in cs]
+# TEMU: Jumpsuit/Romper 덮어쓰기
+if not T.empty:
+    # TEMU product name by customer order 칼럼 추정(여러 변형 대응)
+    name_cols = [c for c in T.columns if "product name" in c and "customer" in c]
+    if name_cols:
+        t_name = T[name_cols[0]].astype(str)
+        jr_cat = t_name.map(detect_jr_from_temu_name)
     else:
-        tmp = s[s["style_key"].notna()].copy()
-        tmp["color"] = ""
-        tmp["size"]  = ""
+        jr_cat = pd.Series(index=T.index, dtype=object)
 
-    for _, r in tmp.iterrows():
-        style = str(r["style_key"])
-        cat   = style_to_cat.get(style, "PANTS")
-        color = r["color"]
-        size  = r["size"]
-        qty   = float(r["qty"] or 0)
-        sales = float(r.get("product price", 0.0) or 0.0)
-        rows.append(("SHEIN", style, cat, color, size, qty, sales))
+# 판매 레코드 → style 단위 카테고리 붙이기
+key_info = info.set_index(info["product number"].astype(str).str.upper().str.replace(" ","",regex=False))["_base_cat"]
+def to_key(s): return str(s).upper().replace(" ","")
 
-sold = pd.DataFrame(rows, columns=["platform","style_key","cat","color","size","qty","sales"])
+if not T.empty:
+    T["_key"] = T["product number"].map(to_key)
+    T["_cat"] = T["_key"].map(key_info).fillna("OTHER")
+    if name_cols:
+        T.loc[jr_cat.notna(), "_cat"] = jr_cat[jr_cat.notna()]  # JUMPSUIT/ROMPER 우선
+else:
+    T = pd.DataFrame(columns=["_cat","qty"])
 
+if not S.empty:
+    S["_key"] = S["product description"].astype(str).map(to_key)
+    S["_cat"] = S["_key"].map(key_info).fillna("OTHER")
+else:
+    S = pd.DataFrame(columns=["_cat","qty"])
+
+sold = pd.concat([T[["_cat","qty"]], S[["_cat","qty"]]], ignore_index=True)
+sold["_cat"] = sold["_cat"].fillna("OTHER")
+
+# -------------------------
+# Category summary
+# -------------------------
 if sold.empty:
-    st.info("해당 조건의 판매 데이터가 없습니다.")
+    st.info("데이터가 없습니다.")
     st.stop()
 
+cat_summary = sold.groupby("_cat")["qty"].sum().sort_values(ascending=False).rename_axis("cat").reset_index()
+cat_summary["ratio"] = cat_summary["qty"] / cat_summary["qty"].sum()
+
 # -------------------------
-# 1) 카테고리 요약 (도넛 + 표)
+# Donut with labels ON the slices (B/W friendly)
 # -------------------------
-cat_summary = (sold.groupby("cat")
-                   .agg(qty=("qty","sum"), sales=("sales","sum"))
-                   .sort_values("qty", ascending=False)
-                   .reset_index())
+st.subheader("📊 카테고리별 판매 비율 (도넛)")
 
-left, right = st.columns([1.1, 1.1])
+labels = cat_summary["cat"].tolist()
+values = cat_summary["qty"].tolist()
+percs  = cat_summary["ratio"].tolist()
 
-with left:
-    st.markdown("### 📊 카테고리별 판매 비율 (도넛)")
+# 작은 조각은 바깥쪽 라벨 + 리더라인
+positions = ["inside" if p >= 0.06 else "outside" for p in percs]
 
-    donut_src = cat_summary.rename(columns={"cat":"카테고리","qty":"count"}).copy()
-    total = float(donut_src["count"].sum() or 1.0)
-    donut_src["pct"] = (donut_src["count"] / total * 100).round(1)
-    donut_src["label"] = donut_src["카테고리"] + " " + donut_src["pct"].astype(str) + "%"
-
-    base = alt.Chart(donut_src).encode(
-        theta=alt.Theta("count:Q", stack=True),
-        color=alt.Color("카테고리:N", legend=None)
-    ).properties(width=520, height=380)
-
-    ring = base.mark_arc(
-        innerRadius=110,
-        outerRadius=180,
-        stroke="#444",
-        strokeWidth=1
+fig = go.Figure(
+    go.Pie(
+        labels=labels,
+        values=values,
+        hole=0.55,
+        textinfo="label+percent",
+        textposition=positions,           # per-slice
+        textfont=dict(color="black", size=14),
+        marker=dict(line=dict(color="#666", width=1)),
+        pull=[0.04 if p < 0.04 else 0 for p in percs]  # 극소 조각 강조(살짝 분리)
     )
+)
+fig.update_layout(
+    showlegend=False,                    # 범례 대신 조각 라벨 사용
+    height=460,
+    margin=dict(l=10, r=10, t=10, b=10),
+    paper_bgcolor="white",
+    plot_bgcolor="white"
+)
+st.plotly_chart(fig, use_container_width=True, theme=None)
 
-    labels = base.transform_calculate(
-        midAngle="(datum.startAngle + datum.endAngle)/2"
-    ).mark_text(
-        radius=145,
-        size=12,
-        fontWeight="bold",
-        fill="#000"
-    ).encode(
-        theta="midAngle:Q",
-        text="label:N",
-        opacity=alt.condition(alt.datum.pct >= 3, alt.value(1), alt.value(0))
-    )
-
-    st.altair_chart(ring + labels, use_container_width=True)
-
-with right:
-    st.markdown("### 🧾 카테고리 요약")
-    cat_tbl = cat_summary.copy()
-    cat_tbl["비율(%)"] = (cat_tbl["qty"] / cat_tbl["qty"].sum() * 100).round(1)
-    cat_tbl = cat_tbl.rename(columns={"cat":"카테고리","qty":"판매수량","sales":"매출"})
-    st.dataframe(cat_tbl, use_container_width=True, hide_index=True)
+# 오른쪽 표 요약
+with st.container(border=True):
+    st.markdown("**🗒 카테고리 요약**")
+    view = cat_summary.copy()
+    view["비율(%)"] = (view["ratio"]*100).round(1)
+    view = view[["cat","qty","비율(%)"]].rename(columns={"cat":"카테고리","qty":"판매수량"})
+    st.dataframe(view, use_container_width=True, hide_index=True)
 
 # -------------------------
-# 2) 옵션 요약 (컬러/사이즈 TOP)
+# 옵션 요약 (색상/사이즈 TOP)
 # -------------------------
-st.markdown("---")
-st.markdown("### 🎨 옵션 요약 (색상/사이즈 Top)")
+st.subheader("🎨 옵션 요약 (색상/사이즈 Top)")
 
-topN = 12
+# 색상 추정: SHEIN은 seller sku, TEMU는 color 컬럼 사용 (있으면)
+def parse_shein_sku_for_color(x: str) -> str:
+    # 예: ABCD-HEATHER_GREY-1X  -> HEATHER GREY
+    parts = str(x).split("-")
+    if len(parts) >= 3:
+        color = parts[-2].replace("_"," ").strip()
+        return color.title()
+    return ""
+
+def parse_shein_sku_for_size(x: str) -> str:
+    sz = str(x).split("-")[-1].upper().strip()
+    norm = {"1XL":"1X","2XL":"2X","3XL":"3X","SMALL":"S","MEDIUM":"M","LARGE":"L"}
+    return norm.get(sz, sz)
+
+colors = []
+sizes  = []
+
+# TEMU
+if not T.empty:
+    if "color" in T.columns:
+        colors += [str(c).title() for c in T["color"] for _ in range(int(1))]  # 존재만 반영
+    if "size" in T.columns:
+        sizes  += [str(s).upper() for s in T["size"]]
+
+# SHEIN
+if not S.empty:
+    sku_col = None
+    for c in ["seller sku","seller_sku","seller sku id","seller-sku"]:
+        if c in S.columns:
+            sku_col = c; break
+    if sku_col:
+        colors += [parse_shein_sku_for_color(v) for v in S[sku_col]]
+        sizes  += [parse_shein_sku_for_size(v)  for v in S[sku_col]]
+
+# 상위 색상/사이즈 표
+from collections import Counter
+top_color = pd.DataFrame(Counter([c for c in colors if c]).most_common(12), columns=["color","qty"])
+top_size  = pd.DataFrame(Counter([s for s in sizes  if s]).most_common(6),  columns=["size","qty"])
 
 c1, c2 = st.columns(2)
 with c1:
-    color_top = (sold.groupby("color")["qty"].sum().sort_values(ascending=False).head(topN)
-                    .rename_axis("색상").reset_index(name="판매수량"))
-    color_chart = alt.Chart(color_top).mark_bar().encode(
-        x=alt.X("판매수량:Q"),
-        y=alt.Y("색상:N", sort="-x"),
-        tooltip=["색상","판매수량"]
-    ).properties(height=320)
-    st.altair_chart(color_chart, use_container_width=True)
-
+    st.markdown("**색상 Top 12**")
+    if not top_color.empty:
+        st.bar_chart(top_color.set_index("color")["qty"])
+    else:
+        st.caption("색상 데이터가 없습니다.")
 with c2:
-    size_top = (sold.groupby("size")["qty"].sum().sort_values(ascending=False).head(topN)
-                   .rename_axis("사이즈").reset_index(name="판매수량"))
-    size_chart = alt.Chart(size_top).mark_bar().encode(
-        x=alt.X("판매수량:Q"),
-        y=alt.Y("사이즈:N", sort="-x"),
-        tooltip=["사이즈","판매수량"]
-    ).properties(height=320)
-    st.altair_chart(size_chart, use_container_width=True)
-
-st.caption("※ 도넛 비율은 판매수량 기준입니다. (색상/사이즈 Top 그래프는 상위 12개)")
+    st.markdown("**사이즈 Top 6**")
+    if not top_size.empty:
+        st.bar_chart(top_size.set_index("size")["qty"])
+    else:
+        st.caption("사이즈 데이터가 없습니다.")

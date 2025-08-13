@@ -5,57 +5,14 @@ import re
 from dateutil import parser
 
 # =========================
-# Page & CSS
+# Page
 # =========================
 st.set_page_config(page_title="세일즈 대시보드", layout="wide")
 st.title("세일즈 대시보드")
 
-# 🔸 페이지 오른쪽 상단 고정 프린트 버튼 + 프린트 최적화 CSS
-st.markdown("""
-<style>
-/* floating print button (top-right) */
-#floating-print {
-  position: fixed;
-  top: 12px;
-  right: 16px;
-  z-index: 1000;
-}
-#floating-print button {
-  all: unset;
-  background: #1f6feb;
-  color: #fff;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(31,111,235,.25);
-}
-#floating-print button:hover { filter: brightness(.95); }
-
-/* 프린트 용 최적화 */
-@media print {
-  /* 기본 툴바/사이드바 숨김 */
-  #floating-print, [data-testid="stToolbar"] { display: none !important; }
-  header, footer { visibility: hidden; height: 0 !important; }
-  [data-testid="stSidebar"] { display: none !important; }
-  .stApp { overflow: visible !important; }
-  section.main { padding: 0 !important; }
-
-  /* 끊김 방지 */
-  .stMarkdown, .stDataFrame, .stTable, .stMetric,
-  .stPlotlyChart, .stAltairChart, .plot-container, .element-container {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  @page { size: A4; margin: 10mm; } /* 필요 시 여백 조절 */
-}
-</style>
-<div id="floating-print">
-  <button onclick="window.print()">🖨️ 프린트</button>
-</div>
-""", unsafe_allow_html=True)
-
+# =========================
+# CSS (프린트 버튼 제거, 기본 스타일만 유지)
+# =========================
 st.markdown("""
 <style>
 /* 공통 카드 */
@@ -151,6 +108,16 @@ def style_key_from_label(label: str, img_map: dict) -> str | None:
 
 def img_tag(url): return f"<img src='{url}' class='thumb'>" if str(url).startswith("http") else ""
 
+# robust status helpers (부분일치)
+def temu_sold_mask(s: pd.Series) -> pd.Series:
+    return s.astype(str).str.lower().str.contains("shipped|delivered", regex=True, na=False)
+
+def temu_cancel_mask(s: pd.Series) -> pd.Series:
+    return s.astype(str).str.lower().str.contains("cancel", regex=True, na=False)
+
+def shein_refund_mask(s: pd.Series) -> pd.Series:
+    return s.astype(str).str.lower().str.contains("customer refunded", na=False)
+
 # =========================
 # 1) Load data FIRST
 # =========================
@@ -164,12 +131,12 @@ df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
 df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
 
 df_temu["order item status"] = df_temu["order item status"].astype(str)
-df_temu["quantity shipped"] = pd.to_numeric(df_temu["quantity shipped"], errors="coerce").fillna(0)
+df_temu["quantity shipped"] = pd.to_numeric(df_temu.get("quantity shipped", 0), errors="coerce").fillna(0)
 df_temu["quantity purchased"] = pd.to_numeric(df_temu.get("quantity purchased", 0), errors="coerce").fillna(0)
-df_temu["base price total"] = clean_money(df_temu["base price total"])
+df_temu["base price total"] = clean_money(df_temu.get("base price total", pd.Series(dtype=str)))
 
 df_shein["order status"] = df_shein["order status"].astype(str)
-df_shein["product price"] = clean_money(df_shein["product price"])
+df_shein["product price"] = clean_money(df_shein.get("product price", pd.Series(dtype=str)))
 
 # =========================
 # 2) Controls
@@ -237,34 +204,36 @@ with c2:
         st.pills("", ["최근 1주", "최근 1개월", "이번 달", "지난 달"],
                  selection_mode="single", key="quick_range", on_change=_apply_quick_range)
 
-# 최종 범위
+# 최종 범위 (하루 선택도 00:00~23:59:59로 포함)
 start = pd.to_datetime(st.session_state["sales_date_range"][0])
-end   = pd.to_datetime(st.session_state["sales_date_range"][1]) + pd.Timedelta(hours=23, minutes=59, seconds=59)
-period_days = (end - start).days + 1
+end   = pd.to_datetime(st.session_state["sales_date_range"][1]) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+
+# 이전 기간은 **날짜 기준 길이**로 산정(시간 꼬임 방지)
+period_days = (st.session_state["sales_date_range"][1] - st.session_state["sales_date_range"][0]).days + 1
 prev_start  = start - pd.Timedelta(days=period_days)
 prev_end    = start - pd.Timedelta(seconds=1)
 
 # =========================
-# 3) Aggregations
+# 3) Aggregations (부분일치 상태 사용)
 # =========================
 def temu_agg(df, s, e):
     d = df[(df["order date"] >= s) & (df["order date"] <= e)].copy()
-    stt = d["order item status"].str.lower()
-    sold = d[stt.isin(["shipped", "delivered"])]
+    stt = d["order item status"]
+    sold = d[temu_sold_mask(stt)]
     qty_sum   = sold["quantity shipped"].sum()
     sales_sum = sold["base price total"].sum()
     aov       = (sales_sum / qty_sum) if qty_sum > 0 else 0.0
-    cancel_qty = d[stt.eq("canceled")]["quantity purchased"].sum()
+    cancel_qty = d[temu_cancel_mask(stt)]["quantity purchased"].sum()
     return sales_sum, qty_sum, aov, cancel_qty, sold
 
 def shein_agg(df, s, e):
     d = df[(df["order date"] >= s) & (df["order date"] <= e)].copy()
-    stt = d["order status"].str.lower()
-    sold = d[~stt.isin(["customer refunded"])]
+    stt = d["order status"]
+    sold = d[~shein_refund_mask(stt)]
     qty_sum   = len(sold)
     sales_sum = sold["product price"].sum()
     aov       = (sales_sum / qty_sum) if qty_sum > 0 else 0.0
-    cancel_qty = stt.eq("customer refunded").sum()
+    cancel_qty = shein_refund_mask(stt).sum()
     return sales_sum, qty_sum, aov, cancel_qty, sold
 
 # =========================
@@ -326,14 +295,15 @@ def get_bestseller_labels(platform, df_sold, s, e):
         best = tmp.groupby("product description")["qty"].sum().sort_values(ascending=False).head(10)
         return list(best.index.astype(str))
     else:
+        # BOTH
         t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
-        t = t[t["order item status"].str.lower().isin(["shipped","delivered"])].copy()
+        t = t[temu_sold_mask(t["order item status"])].copy()
         t["style_key"] = t["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
         t = t.dropna(subset=["style_key"])
         t_cnt = t.groupby("style_key")["quantity shipped"].sum()
 
         s2 = df_shein[(df_shein["order date"]>=s)&(df_shein["order date"]<=e)]
-        s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])].copy()
+        s2 = s2[~shein_refund_mask(s2["order status"])].copy()
         s2["style_key"] = s2["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
         s2 = s2.dropna(subset=["style_key"])
         s_cnt = s2.groupby("style_key").size()
@@ -376,22 +346,22 @@ with st.container(border=True):
 def build_daily(platform: str, s: pd.Timestamp, e: pd.Timestamp) -> pd.DataFrame:
     if platform == "TEMU":
         t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
-        t = t[t["order item status"].str.lower().isin(["shipped","delivered"])]
+        t = t[temu_sold_mask(t["order item status"])]
         daily = t.groupby(pd.Grouper(key="order date", freq="D")).agg(
             qty=("quantity shipped","sum"), Total_Sales=("base price total","sum")
         )
     elif platform == "SHEIN":
         s2 = df_shein[(df_shein["order date"]>=s)&(df_shein["order date"]<=e)]
-        s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])]
+        s2 = s2[~shein_refund_mask(s2["order status"])]
         s2["qty"] = 1
         daily = s2.groupby(pd.Grouper(key="order date", freq="D")).agg(
             qty=("qty","sum"), Total_Sales=("product price","sum")
         )
     else:
         t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
-        t = t[t["order item status"].str.lower().isin(["shipped","delivered"])].copy()
+        t = t[temu_sold_mask(t["order item status"])].copy()
         s2 = df_shein[(df_shein["order date"]>=s)&(df_shein["order date"]<=e)]
-        s2 = s2[~s2["order status"].str.lower().isin(["customer refunded"])].copy()
+        s2 = s2[~shein_refund_mask(s2["order status"])].copy()
         s2["qty"] = 1
         t_daily = t.groupby(pd.Grouper(key="order date", freq="D")).agg(
             t_qty=("quantity shipped","sum"), t_sales=("base price total","sum")
@@ -440,13 +410,13 @@ def best_table(platform, df_sold, s, e):
 
     # BOTH
     t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)&
-                (df_temu["order item status"].str.lower().isin(["shipped","delivered"]))].copy()
+                (temu_sold_mask(df_temu["order item status"]))].copy()
     t["style_key"] = t["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
     t = t.dropna(subset=["style_key"])
     t_group = t.groupby("style_key")["quantity shipped"].sum().astype(int)
 
     s2 = df_shein[(df_shein["order date"]>=s)&(df_shein["order date"]<=e)&
-                  (~df_shein["order status"].str.lower().isin(["customer refunded"]))].copy()
+                  (~shein_refund_mask(df_shein["order status"]))].copy()
     s2["style_key"] = s2["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
     s2 = s2.dropna(subset=["style_key"])
     s_group = s2.groupby("style_key").size().astype(int)

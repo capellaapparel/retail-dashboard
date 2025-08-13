@@ -139,59 +139,65 @@ df_shein["order status"] = df_shein["order status"].astype(str)
 df_shein["product price"] = clean_money(df_shein.get("product price", pd.Series(dtype=str)))
 
 # =========================
-# 2) Controls  (경고 없이 작동 버전)
+# 2) Controls  (타입 혼용 에러 방지)
 # =========================
 min_dt, max_dt = _safe_minmax(df_temu["order date"], df_shein["order date"])
 today_ts = pd.Timestamp.today().normalize()
-today_d  = today_ts.date()
 
-def _clamp_date(d): 
-    return max(min_dt, min(pd.to_datetime(d), max_dt)).date()
+def _clamp_date(d) -> pd.Timestamp.date:
+    """
+    어떤 입력이 와도 date로 바꾼 다음,
+    min_dt.date() ~ max_dt.date() 사이로 clamp 해서 date로 반환
+    """
+    d_date = pd.to_datetime(d).date()
+    mn = pd.to_datetime(min_dt).date()
+    mx = pd.to_datetime(max_dt).date()
+    if d_date < mn:
+        d_date = mn
+    if d_date > mx:
+        d_date = mx
+    return d_date
 
-# 기본 기간: 최근 7일
-default_start = _clamp_date((today_ts - pd.Timedelta(days=6)).date())
-default_end   = _clamp_date(today_d)
+# 기본: 최근 7일
+default_start = _clamp_date(today_ts - pd.Timedelta(days=6))
+default_end   = _clamp_date(today_ts)
 
-# 👉 위젯을 만들기 전에, 한번만 초기화하고
+# 위젯 초기값은 Session State 한 곳만 사용
 if "sales_date_input" not in st.session_state:
     st.session_state["sales_date_input"] = (default_start, default_end)
 
-# 플랫폼
 c1, c2 = st.columns([1.2, 8.8])
 with c1:
     platform = st.radio("플랫폼 선택", ["TEMU", "SHEIN", "BOTH"], horizontal=True)
 
-# 빠른 범위 적용 콜백
 def _apply_quick_range():
     label = st.session_state.get("quick_range")
     if not label:
         return
     if label == "최근 1주":
-        s = (today_ts - pd.Timedelta(days=6)).date(); e = today_d
+        s = today_ts - pd.Timedelta(days=6); e = today_ts
     elif label == "최근 1개월":
-        s = (today_ts - pd.Timedelta(days=29)).date(); e = today_d
+        s = today_ts - pd.Timedelta(days=29); e = today_ts
     elif label == "이번 달":
-        s = today_ts.replace(day=1).date(); e = today_d
+        s = today_ts.replace(day=1); e = today_ts
     elif label == "지난 달":
         first_this = today_ts.replace(day=1)
-        last_end   = first_this - pd.Timedelta(days=1)   # 지난 달 말일
-        s = last_end.replace(day=1).date()               # 지난 달 1일
-        e = last_end.date()
+        last_end   = first_this - pd.Timedelta(days=1)  # 지난달 말일
+        s = last_end.replace(day=1)                     # 지난달 1일
+        e = last_end
     else:
         return
-    # 가용 데이터 범위로 clamp
     s = _clamp_date(s); e = _clamp_date(e)
     if e < s: e = s
-    # 👉 위젯 값은 오직 이 키 하나만 갱신 (value 파라미터는 건드리지 않음)
     st.session_state["sales_date_input"] = (s, e)
 
 with c2:
-    # ⚠️ 경고 제거 포인트: value를 직접 넘기지 말고 key만 넘긴다.
+    # date_input은 value를 넘기지 말고 key만 사용 (경고 제거)
     st.date_input(
         "조회 기간",
         key="sales_date_input",
-        min_value=min_dt.date(),
-        max_value=max_dt.date(),
+        min_value=min_dt,
+        max_value=max_dt,
     )
     try:
         st.segmented_control("", ["최근 1주", "최근 1개월", "이번 달", "지난 달"],
@@ -200,13 +206,15 @@ with c2:
         st.pills("", ["최근 1주", "최근 1개월", "이번 달", "지난 달"],
                  selection_mode="single", key="quick_range", on_change=_apply_quick_range)
 
-# 최종 범위(종료일은 23:59:59 포함)
-s_val, e_val = st.session_state["sales_date_input"]
-start = pd.to_datetime(_clamp_date(s_val))
-end   = pd.to_datetime(_clamp_date(e_val)) + pd.Timedelta(hours=23, minutes=59, seconds=59)
+# 최종 범위: 시작/종료를 Timestamp로 만들고 종료는 23:59:59까지 포함
+s_date, e_date = st.session_state["sales_date_input"]
+start = pd.to_datetime(s_date)
+end   = pd.to_datetime(e_date) + pd.Timedelta(hours=23, minutes=59, seconds=59)
+
 period_days = (end - start).days + 1
 prev_start  = start - pd.Timedelta(days=period_days)
 prev_end    = start - pd.Timedelta(seconds=1)
+
 
 
 # =========================

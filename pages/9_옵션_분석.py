@@ -203,39 +203,94 @@ cat_left  = cat_summary[cat_summary["ox"] <  0].copy()
 # -------------------------
 # 레이아웃: 도넛(왼쪽) + 요약(오른쪽)
 # -------------------------
-st.markdown("### 📊 카테고리별 판매 비율 (도넛)")
-c_l, c_r = st.columns([1.1, 1])
+import altair as alt
+import numpy as np
+alt.data_transformers.disable_max_rows()
 
-with c_l:
-    # 도넛 본체
-    pie = alt.Chart(cat_summary).mark_arc(innerRadius=innerR, outerRadius=outerR, stroke='white').encode(
-        theta=alt.Theta("count:Q", stack=True, title=None),
-        color=alt.Color("cat:N", title="카테고리"),
-        tooltip=["cat:N","count:Q","ratio:Q"]
-    ).properties(width=520, height=380)
+# ----- 파라미터: 원 크기/리더 길이(짧게!) -----
+INNER_R = 80         # 도넛 속 반경
+OUTER_R = 140        # 도넛 바깥 반경
+LEAD_IN = 16         # 조각 가장자리 → 첫번 째 꺾임까지
+LEAD_OUT = 32        # 첫 꺾임 → 라벨 위치까지 (짧게)
+LABEL_GAP = 6        # 라벨 추가 여백
 
-    # 리더라인
-    lines = alt.Chart(cat_summary).mark_rule(color="#888").encode(
-        x="ox:Q", y="oy:Q", x2="lx:Q", y2="ly:Q"
-    )
+# 각 카테고리별 각도 계산용 테이블로 바꿈
+donut_src = cat_summary.copy()
+donut_src = donut_src.rename(columns={"cat":"카테고리", "qty":"판매수량"})
+donut_src["angle"] = donut_src["판매수량"] / donut_src["판매수량"].sum() * 2*np.pi
 
-    # 라벨(오른쪽: left align)
-    text_right = alt.Chart(cat_right).mark_text(align="left", baseline="middle", dx=6).encode(
-        x="lx:Q", y="ly:Q", text="label:N", color=alt.value("#111")
-    )
-    # 라벨(왼쪽: right align)
-    text_left = alt.Chart(cat_left).mark_text(align="right", baseline="middle", dx=-6).encode(
-        x="lx:Q", y="ly:Q", text="label:N", color=alt.value("#111")
-    )
+# 누적각(시작각) 계산 → 중간각(midAngle) 계산
+donut_chart_data = alt.Chart(donut_src).transform_window(
+    cum='sum(angle)', sort=[alt.SortField('카테고리', order='ascending')]
+).transform_calculate(
+    mid='datum.cum - datum.angle/2',     # 조각 가운데 각도
+    # 시작점(조각바깥) 좌표
+    x0=f'{OUTER_R}+4 * cos(datum.mid)',  # cos/sin 사용 시 Vega-Lite는 라디안 기준
+    y0=f'{OUTER_R}+4 * sin(datum.mid)',
+    # 첫 꺾임점(짧게)
+    x1=f'{OUTER_R + LEAD_IN} * cos(datum.mid)',
+    y1=f'{OUTER_R + LEAD_IN} * sin(datum.mid)',
+    # 라벨 지점(짧게)
+    x2=f'{OUTER_R + LEAD_OUT} * cos(datum.mid)',
+    y2=f'{OUTER_R + LEAD_OUT} * sin(datum.mid)',
+    # 좌/우 판별
+    side='sign(cos(datum.mid))',
+    # 라벨 정렬 보정용 x (좌측은 살짝 왼쪽, 우측은 살짝 오른쪽)
+    tx=f'({OUTER_R + LEAD_OUT} * cos(datum.mid)) + ( {LABEL_GAP} * sign(cos(datum.mid)) )',
+    ty=f'{OUTER_R + LEAD_OUT} * sin(datum.mid)',
+    label="datum.카테고리 + ' (' + format(datum.판매수량, '.0f') + ' / ' + format(datum.pct, '.1f') + '%)'"
+).properties(width=560, height=420)
 
-    st.altair_chart(pie + lines + text_right + text_left, use_container_width=True)
+# 도넛(조각)
+arcs = donut_chart_data.mark_arc(
+    innerRadius=INNER_R,
+    outerRadius=OUTER_R,
+    stroke='white',
+    strokeWidth=1
+).encode(
+    theta='angle:Q',
+    color=alt.Color('카테고리:N', legend=None),
+    tooltip=['카테고리:N', '판매수량:Q', alt.Tooltip('pct:Q', title='비율(%)', format='.1f')]
+)
 
-with c_r:
+# 리더 선(조각바깥 → 꺾임 → 라벨지점)
+leaders = donut_chart_data.mark_rule(color='#666', strokeWidth=1).encode(
+    x='x0:Q', y='y0:Q', x2='x1:Q', y2='y1:Q'
+) + donut_chart_data.mark_rule(color='#666', strokeWidth=1).encode(
+    x='x1:Q', y='y1:Q', x2='x2:Q', y2='y2:Q'
+)
+
+# 출발점에 작은 점
+anchors = donut_chart_data.mark_point(color='#666', filled=True, size=20).encode(
+    x='x0:Q', y='y0:Q'
+)
+
+# 라벨(좌/우 자동 정렬)
+labels = donut_chart_data.mark_text(fontSize=12).encode(
+    x='tx:Q',
+    y='ty:Q',
+    text='label:N',
+    align=alt.Condition('datum.side > 0', alt.value('left'), alt.value('right')),
+    baseline=alt.value('middle')
+)
+
+donut = arcs + leaders + anchors + labels
+
+# 오른쪽 표(요약)
+summary_tbl = alt.Chart(donut_src).mark_bar().encode()  # 자리는 비워두고 Streamlit 표로 출력
+
+# Streamlit 배치: 도넛 왼쪽 / 요약 표 오른쪽
+c1, c2 = st.columns([1.2, 1])
+with c1:
+    st.altair_chart(donut, use_container_width=True)
+with c2:
     st.markdown("### 📁 카테고리 요약")
-    st.dataframe(
-        cat_summary[["cat","count","ratio"]].rename(columns={"cat":"카테고리","count":"판매수량","ratio":"비율(%)"}),
-        use_container_width=True, hide_index=True
-    )
+    show = donut_src[['카테고리','판매수량','pct']].sort_values('판매수량', ascending=False).reset_index(drop=True)
+    show = show.rename(columns={'pct':'비율(%)'})
+    st.dataframe(show, use_container_width=True, hide_index=True, column_config={
+        '판매수량': st.column_config.NumberColumn('판매수량', format="%,d"),
+        '비율(%)':  st.column_config.NumberColumn('비율(%)', format="%.1f"),
+    })
 
 # -------------------------
 # 옵션 요약 (색상 / 사이즈 Top)

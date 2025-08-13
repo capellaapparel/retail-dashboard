@@ -226,31 +226,46 @@ data["cat"]   = data["cat"].replace({"OTHER":"PANTS"})  # OTHER 최대한 제거
 # -------------------------
 # 1) 카테고리 도넛 + 요약
 # -------------------------
-cat_grp = data.groupby("cat").agg(qty=("qty","sum")).reset_index()
-cat_grp = cat_grp.sort_values("qty", ascending=False)
-cat_grp["share"] = cat_grp["qty"] / cat_grp["qty"].sum() * 100
+# cat_summary 예시는 다음과 같은 형태라고 가정합니다:
+# cat_summary = DataFrame([{"cat":"TOP","qty":413,"sales":...}, ...])
+# value_col 은 비율 계산에 쓸 컬럼 (판매수량 기준이면 "qty")
+value_col = "qty"
 
-left, right = st.columns([1.1, 1])
-with left:
-    st.subheader("📊 카테고리별 판매 비율 (도넛)")
-    donut = alt.Chart(cat_grp).mark_arc(innerRadius=110).encode(
-        theta=alt.Theta("qty:Q", stack=True, title=""),
-        color=alt.Color("cat:N", title="카테고리"),
-        tooltip=[alt.Tooltip("cat:N", title="카테고리"),
-                 alt.Tooltip("qty:Q", title="판매수량", format=",.0f"),
-                 alt.Tooltip("share:Q", title="비율(%)", format=".1f")]
-    ).properties(height=420)
-    st.altair_chart(donut, use_container_width=True)
+donut_src = cat_summary.copy()
+donut_src = donut_src.rename(columns={"cat": "카테고리", value_col: "count"})
+total = float(donut_src["count"].sum() or 1.0)
+donut_src["pct"] = (donut_src["count"] / total * 100).round(1)
+donut_src["label"] = donut_src["카테고리"] + " " + donut_src["pct"].astype(str) + "%"
 
-with right:
-    st.subheader("📋 카테고리 요약")
-    st.dataframe(
-        cat_grp.rename(columns={"cat":"카테고리","qty":"판매수량","share":"비율(%)"})
-               .assign(**{"비율(%)":cat_grp["share"].round(1)}),
-        use_container_width=True, hide_index=True
-    )
+# 도넛(링) 본체
+base = alt.Chart(donut_src).encode(
+    theta=alt.Theta("count:Q", stack=True),
+    # 색상 범례는 흑백 프린트에선 큰 의미가 없으니 숨겨도 됩니다 (legend=None)
+    color=alt.Color("카테고리:N", legend=None)
+).properties(width=520, height=380)
 
-st.markdown("---")
+ring = base.mark_arc(
+    innerRadius=110,        # 도넛 두께 조절
+    outerRadius=180,
+    stroke="#444",          # 경계선 넣어서 흑백에서도 구분
+    strokeWidth=1
+)
+
+# 라벨(카테고리명 + %). 작은 조각(3% 미만)은 숨김
+labels = base.transform_calculate(
+    midAngle="(datum.startAngle + datum.endAngle)/2"
+).mark_text(
+    radius=145,             # 도넛 안쪽 반지름(라벨 위치)
+    size=12,
+    fontWeight="bold",
+    fill="#000"
+).encode(
+    theta="midAngle:Q",
+    text="label:N",
+    opacity=alt.condition(alt.datum.pct >= 3, alt.value(1), alt.value(0))
+)
+
+st.altair_chart(ring + labels, use_container_width=True)
 
 # -------------------------
 # 2) 옵션 Top (색상/사이즈)

@@ -139,27 +139,33 @@ df_shein["order status"] = df_shein["order status"].astype(str)
 df_shein["product price"] = clean_money(df_shein.get("product price", pd.Series(dtype=str)))
 
 # =========================
-# 2) Controls
+# 2) Controls  (경고 없이 작동 버전)
 # =========================
 min_dt, max_dt = _safe_minmax(df_temu["order date"], df_shein["order date"])
 today_ts = pd.Timestamp.today().normalize()
 today_d  = today_ts.date()
 
-def _clamp_date(d): return max(min_dt, min(d, max_dt))
+def _clamp_date(d): 
+    return max(min_dt, min(pd.to_datetime(d), max_dt)).date()
 
+# 기본 기간: 최근 7일
 default_start = _clamp_date((today_ts - pd.Timedelta(days=6)).date())
 default_end   = _clamp_date(today_d)
 
-if "sales_date_range" not in st.session_state:
-    st.session_state["sales_date_range"] = (default_start, default_end)
+# 👉 위젯을 만들기 전에, 한번만 초기화하고
+if "sales_date_input" not in st.session_state:
+    st.session_state["sales_date_input"] = (default_start, default_end)
 
+# 플랫폼
 c1, c2 = st.columns([1.2, 8.8])
 with c1:
     platform = st.radio("플랫폼 선택", ["TEMU", "SHEIN", "BOTH"], horizontal=True)
 
+# 빠른 범위 적용 콜백
 def _apply_quick_range():
     label = st.session_state.get("quick_range")
-    if not label: return
+    if not label:
+        return
     if label == "최근 1주":
         s = (today_ts - pd.Timedelta(days=6)).date(); e = today_d
     elif label == "최근 1개월":
@@ -167,36 +173,26 @@ def _apply_quick_range():
     elif label == "이번 달":
         s = today_ts.replace(day=1).date(); e = today_d
     elif label == "지난 달":
-        first_this = today_ts.replace(day=1); last_end = first_this - pd.Timedelta(days=1)
-        s = last_end.replace(day=1).date(); e = last_end.date()
+        first_this = today_ts.replace(day=1)
+        last_end   = first_this - pd.Timedelta(days=1)   # 지난 달 말일
+        s = last_end.replace(day=1).date()               # 지난 달 1일
+        e = last_end.date()
     else:
         return
+    # 가용 데이터 범위로 clamp
     s = _clamp_date(s); e = _clamp_date(e)
     if e < s: e = s
-    st.session_state["sales_date_range"] = (s, e)
+    # 👉 위젯 값은 오직 이 키 하나만 갱신 (value 파라미터는 건드리지 않음)
     st.session_state["sales_date_input"] = (s, e)
 
 with c2:
-    s_val, e_val = st.session_state["sales_date_range"]
-    s_val = _clamp_date(s_val); e_val = _clamp_date(e_val)
-    if e_val < s_val: e_val = s_val
-
-    dr = st.date_input(
+    # ⚠️ 경고 제거 포인트: value를 직접 넘기지 말고 key만 넘긴다.
+    st.date_input(
         "조회 기간",
-        value=(s_val, e_val),
-        min_value=min_dt,
-        max_value=max_dt,
-        key="sales_date_input"
+        key="sales_date_input",
+        min_value=min_dt.date(),
+        max_value=max_dt.date(),
     )
-    if isinstance(dr, (list, tuple)) and len(dr) == 2:
-        s, e = dr
-    else:
-        s = e = dr
-    s = pd.to_datetime(s).date(); e = pd.to_datetime(e).date()
-    s = _clamp_date(s); e = _clamp_date(e)
-    if e < s: e = s
-    st.session_state["sales_date_range"] = (s, e)
-
     try:
         st.segmented_control("", ["최근 1주", "최근 1개월", "이번 달", "지난 달"],
                              key="quick_range", on_change=_apply_quick_range)
@@ -204,14 +200,14 @@ with c2:
         st.pills("", ["최근 1주", "최근 1개월", "이번 달", "지난 달"],
                  selection_mode="single", key="quick_range", on_change=_apply_quick_range)
 
-# 최종 범위 (하루 선택도 00:00~23:59:59로 포함)
-start = pd.to_datetime(st.session_state["sales_date_range"][0])
-end   = pd.to_datetime(st.session_state["sales_date_range"][1]) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-
-# 이전 기간은 **날짜 기준 길이**로 산정(시간 꼬임 방지)
-period_days = (st.session_state["sales_date_range"][1] - st.session_state["sales_date_range"][0]).days + 1
+# 최종 범위(종료일은 23:59:59 포함)
+s_val, e_val = st.session_state["sales_date_input"]
+start = pd.to_datetime(_clamp_date(s_val))
+end   = pd.to_datetime(_clamp_date(e_val)) + pd.Timedelta(hours=23, minutes=59, seconds=59)
+period_days = (end - start).days + 1
 prev_start  = start - pd.Timedelta(days=period_days)
 prev_end    = start - pd.Timedelta(seconds=1)
+
 
 # =========================
 # 3) Aggregations (부분일치 상태 사용)

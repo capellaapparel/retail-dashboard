@@ -260,6 +260,7 @@ else:  # BOTH
 # =========================
 # 5) KPI
 # =========================
+# st.caption(f"DEBUG range -> start={start}, end={end}")
 def _delta_str(now, prev):
     if prev in (0, None) or pd.isna(prev): return "—"
     pct = (now - prev) / prev * 100

@@ -118,14 +118,6 @@ def temu_cancel_mask(s: pd.Series) -> pd.Series:
 def shein_refund_mask(s: pd.Series) -> pd.Series:
     return s.astype(str).str.lower().str.contains("customer refunded", na=False)
 
-# === NEW: SHEIN 프로모션 적용 여부 (쿠폰/스토어 캠페인 중 하나라도 값이 있으면 True)
-def shein_promo_mask(df: pd.DataFrame) -> pd.Series:
-    c1 = df.get("coupon discount")
-    c2 = df.get("store campaign discount")
-    c1v = clean_money(c1 if c1 is not None else pd.Series([0]*len(df)))
-    c2v = clean_money(c2 if c2 is not None else pd.Series([0]*len(df)))
-    return (c1v.fillna(0) != 0) | (c2v.fillna(0) != 0)
-
 # =========================
 # 1) Load data FIRST
 # =========================
@@ -200,10 +192,9 @@ def _apply_quick_range():
     st.session_state["sales_date_input"] = (s, e)
 
 with c2:
-    # ✅ FIX 1: value를 세션 상태로 명시해 위젯/세션 동기화
+    # date_input은 value를 넘기지 말고 key만 사용 (경고 제거)
     st.date_input(
         "조회 기간",
-        value=st.session_state["sales_date_input"],
         key="sales_date_input",
         min_value=min_dt,
         max_value=max_dt,
@@ -217,13 +208,6 @@ with c2:
 
 # 최종 범위: 시작/종료를 Timestamp로 만들고 종료는 23:59:59까지 포함
 s_date, e_date = st.session_state["sales_date_input"]
-
-# ✅ FIX 2: 형 고정 + 가벼운 보정(클램프 과도 X)
-s_date = pd.to_datetime(s_date).date()
-e_date = pd.to_datetime(e_date).date()
-s_date = max(s_date, min_dt); e_date = min(e_date, max_dt)
-if e_date < s_date: e_date = s_date
-
 start = pd.to_datetime(s_date)
 end   = pd.to_datetime(e_date) + pd.Timedelta(hours=23, minutes=59, seconds=59)
 
@@ -355,25 +339,6 @@ if dropped:
     bullets.append(f"• Top10 **이탈**: {', '.join(dropped)} → 인벤토리/가격/노출 점검")
 
 bullets.append("• 체크리스트: 쿠폰/프로모션, 상위 상품 재고(핵심 사이즈), 경쟁가/리뷰, 이미지/타이틀")
-
-# === (NEW) SHEIN 프로모션 인사이트 (인사이트 섹션에만 추가) ===
-try:
-    if platform in ("SHEIN", "BOTH"):
-        shein_cur = df_shein[(df_shein["order date"] >= start) & (df_shein["order date"] <= end)]
-        shein_cur = shein_cur[~shein_refund_mask(shein_cur["order status"])].copy()
-        if not shein_cur.empty:
-            p_mask = shein_promo_mask(shein_cur)
-            total_orders = len(shein_cur)
-            promo_orders = int(p_mask.sum())
-            promo_sales  = shein_cur.loc[p_mask, "product price"].sum()
-            promo_ratio  = (promo_orders / total_orders * 100) if total_orders > 0 else 0.0
-
-            prefix = "SHEIN " if platform == "BOTH" else ""
-            bullets.append(f"• {prefix}프로모션 주문 비중: **{promo_ratio:.1f}%** ({promo_orders:,}/{total_orders:,})")
-            bullets.append(f"• {prefix}프로모션 매출: **${promo_sales:,.2f}**")
-except Exception:
-    pass
-# === (NEW) 끝 ===
 
 with st.container(border=True):
     st.markdown("**자동 인사이트 & 액션 제안**")

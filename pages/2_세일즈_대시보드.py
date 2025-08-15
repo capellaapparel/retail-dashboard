@@ -11,27 +11,18 @@ st.set_page_config(page_title="세일즈 대시보드", layout="wide")
 st.title("세일즈 대시보드")
 
 # =========================
-# CSS (프린트 버튼 제거, 기본 스타일만 유지)
+# CSS
 # =========================
 st.markdown("""
 <style>
-/* 공통 카드 */
 .cap-card { border:1px solid #e9e9ef; border-radius:12px; padding:16px; background:#fff; }
 .cap-card + .cap-card { margin-top:14px; }
-
-/* KPI 박스(외곽 네모만, 내부는 native metric 사용) */
 .kpi-wrap { display:grid; grid-template-columns: repeat(4, minmax(240px, 1fr)); gap:16px; }
 .kpi-cell { border:1px solid #f0f0f5; border-radius:12px; padding:14px 16px; background:#fff; }
-
-/* 인사이트 */
 .insight-title { font-weight:700; margin-bottom:8px; font-size:1.05rem; }
 .insight-list { margin:0; padding-left:18px; }
 .insight-list li { margin:4px 0; line-height:1.45; }
-
-/* 섹션 제목 */
 .block-title { margin:18px 0 8px 0; font-weight:700; font-size:1.05rem; }
-
-/* Best Seller 테이블 크게 */
 .best-card .table-wrap { width:100%; }
 .best-card table { width:100% !important; table-layout:fixed; border-collapse:separate; border-spacing:0; }
 .best-card th, .best-card td { padding:12px 14px; font-size:0.96rem; }
@@ -43,8 +34,6 @@ st.markdown("""
 .best-card table tbody td:nth-child(2) { width:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .best-card table thead th:nth-child(n+3),
 .best-card table tbody td:nth-child(n+3) { width:120px; text-align:right; }
-
-/* 상품 이미지 확대 */
 img.thumb { width:84px; height:auto; border-radius:10px; }
 </style>
 """, unsafe_allow_html=True)
@@ -81,13 +70,6 @@ def parse_sheindate(x):
 def clean_money(s: pd.Series) -> pd.Series:
     return (s.astype(str).str.replace(r"[^0-9.\-]", "", regex=True).replace("", pd.NA).astype(float))
 
-def _safe_minmax(*series):
-    s = pd.concat([pd.to_datetime(x, errors="coerce") for x in series], ignore_index=True).dropna()
-    if s.empty:
-        t = pd.Timestamp.today().normalize().date()
-        return t, t
-    return s.min().date(), s.max().date()
-
 STYLE_RE = re.compile(r"\b([A-Z]{1,3}\d{3,5}[A-Z0-9]?)\b")
 def build_img_map(df_info: pd.DataFrame):
     keys = df_info["product number"].astype(str).str.upper().str.replace(" ", "", regex=False)
@@ -108,7 +90,7 @@ def style_key_from_label(label: str, img_map: dict) -> str | None:
 
 def img_tag(url): return f"<img src='{url}' class='thumb'>" if str(url).startswith("http") else ""
 
-# robust status helpers (부분일치)
+# robust status helpers
 def temu_sold_mask(s: pd.Series) -> pd.Series:
     return s.astype(str).str.lower().str.contains("shipped|delivered", regex=True, na=False)
 
@@ -118,17 +100,16 @@ def temu_cancel_mask(s: pd.Series) -> pd.Series:
 def shein_refund_mask(s: pd.Series) -> pd.Series:
     return s.astype(str).str.lower().str.contains("customer refunded", na=False)
 
-# --- NEW: SHEIN 프로모션 여부(두 열 중 하나라도 값이 있으면 True)
+# NEW: SHEIN 프로모션 여부
 def shein_promo_mask(df: pd.DataFrame) -> pd.Series:
     c1 = df.get("coupon discount")
     c2 = df.get("store campaign discount")
-    # 숫자로 정규화
     c1v = clean_money(c1 if c1 is not None else pd.Series([0]*len(df)))
     c2v = clean_money(c2 if c2 is not None else pd.Series([0]*len(df)))
     return (c1v.fillna(0) != 0) | (c2v.fillna(0) != 0)
 
 # =========================
-# 1) Load data FIRST
+# 1) Load data
 # =========================
 df_temu  = load_google_sheet("TEMU_SALES")
 df_shein = load_google_sheet("SHEIN_SALES")
@@ -148,26 +129,29 @@ df_shein["order status"] = df_shein["order status"].astype(str)
 df_shein["product price"] = clean_money(df_shein.get("product price", pd.Series(dtype=str)))
 
 # =========================
-# 2) Controls  (타입 혼용 에러 방지)
+# 2) Date Controls (안전한 min/max, 과도한 클램프 제거)
 # =========================
-min_dt, max_dt = _safe_minmax(df_temu["order date"], df_shein["order date"])
+def _col_minmax(df: pd.DataFrame, col: str):
+    s = pd.to_datetime(df[col], errors="coerce")
+    if s.notna().any():
+        return s.min().date(), s.max().date()
+    return None, None
+
+t_minmax = _col_minmax(df_temu,  "order date")
+s_minmax = _col_minmax(df_shein, "order date")
+cands = [mm for mm in [t_minmax, s_minmax] if mm[0] is not None]
+if cands:
+    min_dt = min(mm[0] for mm in cands)
+    max_dt = max(mm[1] for mm in cands)
+else:
+    today = pd.Timestamp.today().normalize().date()
+    min_dt = (pd.Timestamp(today) - pd.Timedelta(days=30)).date()
+    max_dt = today
+
 today_ts = pd.Timestamp.today().normalize()
+default_start = max((today_ts - pd.Timedelta(days=6)).date(), min_dt)
+default_end   = min(today_ts.date(), max_dt)
 
-def _clamp_date(d) -> pd.Timestamp.date:
-    d_date = pd.to_datetime(d).date()
-    mn = pd.to_datetime(min_dt).date()
-    mx = pd.to_datetime(max_dt).date()
-    if d_date < mn:
-        d_date = mn
-    if d_date > mx:
-        d_date = mx
-    return d_date
-
-# 기본: 최근 7일
-default_start = _clamp_date(today_ts - pd.Timedelta(days=6))
-default_end   = _clamp_date(today_ts)
-
-# 위젯 초기값은 Session State 한 곳만 사용
 if "sales_date_input" not in st.session_state:
     st.session_state["sales_date_input"] = (default_start, default_end)
 
@@ -179,26 +163,28 @@ def _apply_quick_range():
     label = st.session_state.get("quick_range")
     if not label:
         return
+    today_ts = pd.Timestamp.today().normalize()
     if label == "최근 1주":
-        s = today_ts - pd.Timedelta(days=6); e = today_ts
+        s = (today_ts - pd.Timedelta(days=6)).date(); e = today_ts.date()
     elif label == "최근 1개월":
-        s = today_ts - pd.Timedelta(days=29); e = today_ts
+        s = (today_ts - pd.Timedelta(days=29)).date(); e = today_ts.date()
     elif label == "이번 달":
-        s = today_ts.replace(day=1); e = today_ts
+        s = today_ts.replace(day=1).date(); e = today_ts.date()
     elif label == "지난 달":
         first_this = today_ts.replace(day=1)
         last_end   = first_this - pd.Timedelta(days=1)
-        s = last_end.replace(day=1)
-        e = last_end
+        s = last_end.replace(day=1).date(); e = last_end.date()
     else:
         return
-    s = _clamp_date(s); e = _clamp_date(e)
+    # 범위 보정만 (데이터 전체 min/max로 자르기)
+    s = max(s, min_dt); e = min(e, max_dt)
     if e < s: e = s
     st.session_state["sales_date_input"] = (s, e)
 
 with c2:
     st.date_input(
         "조회 기간",
+        value=st.session_state["sales_date_input"],  # 동기화
         key="sales_date_input",
         min_value=min_dt,
         max_value=max_dt,
@@ -210,7 +196,6 @@ with c2:
         st.pills("", ["최근 1주", "최근 1개월", "이번 달", "지난 달"],
                  selection_mode="single", key="quick_range", on_change=_apply_quick_range)
 
-# 최종 범위
 s_date, e_date = st.session_state["sales_date_input"]
 start = pd.to_datetime(s_date)
 end   = pd.to_datetime(e_date) + pd.Timedelta(hours=23, minutes=59, seconds=59)
@@ -220,7 +205,7 @@ prev_start  = start - pd.Timedelta(days=period_days)
 prev_end    = start - pd.Timedelta(seconds=1)
 
 # =========================
-# 3) Aggregations (부분일치 상태 사용)
+# 3) Aggregations
 # =========================
 def temu_agg(df, s, e):
     d = df[(df["order date"] >= s) & (df["order date"] <= e)].copy()
@@ -230,24 +215,20 @@ def temu_agg(df, s, e):
     sales_sum = sold["base price total"].sum()
     aov       = (sales_sum / qty_sum) if qty_sum > 0 else 0.0
     cancel_qty = d[temu_cancel_mask(stt)]["quantity purchased"].sum()
-    # TEMU에는 프로모션 개념 없음 → 0으로 반환 맞춤
-    promo_sales_sum, promo_qty = 0.0, 0
+    promo_sales_sum, promo_qty = 0.0, 0   # TEMU promo 없음
     return sales_sum, qty_sum, aov, cancel_qty, sold, promo_sales_sum, promo_qty
 
 def shein_agg(df, s, e):
     d = df[(df["order date"] >= s) & (df["order date"] <= e)].copy()
     stt = d["order status"]
-    sold = d[~shein_refund_mask(stt)].copy()  # 환불 제외
+    sold = d[~shein_refund_mask(stt)].copy()
     qty_sum   = len(sold)
     sales_sum = sold["product price"].sum()
     aov       = (sales_sum / qty_sum) if qty_sum > 0 else 0.0
     cancel_qty = shein_refund_mask(stt).sum()
-
-    # --- 프로모션 집계
     p_mask = shein_promo_mask(sold)
     promo_sales_sum = sold.loc[p_mask, "product price"].sum()
     promo_qty = int(p_mask.sum())
-
     return sales_sum, qty_sum, aov, cancel_qty, sold, promo_sales_sum, promo_qty
 
 # =========================
@@ -267,7 +248,7 @@ else:  # BOTH
     sales_sum, qty_sum, cancel_qty = t_s + s_s, t_q + s_q, t_c + s_c
     aov = sales_sum / qty_sum if qty_sum > 0 else 0.0
     df_sold = pd.concat([t_sold, s_sold], ignore_index=True)
-    promo_sales_sum, promo_qty = s_ps, s_pq  # BOTH에서는 SHEIN 프로모션만 표시
+    promo_sales_sum, promo_qty = s_ps, s_pq  # BOTH는 SHEIN promo만 노출
 
     pt_s, pt_q, pt_a, pt_c, pt_sold, pt_ps, pt_pq = temu_agg(df_temu, prev_start, prev_end)
     ps_s, ps_q, ps_a, ps_c, ps_sold, ps_ps, ps_pq = shein_agg(df_shein, prev_start, prev_end)
@@ -285,9 +266,8 @@ def _delta_str(now, prev):
     sign = "+" if pct >= 0 else ""
     return f"{sign}{pct:.1f}%"
 
-st.subheader("")  # 상단 여백용
+st.subheader("")
 with st.container(border=True):
-    # SHEIN 또는 BOTH일 때 프로모션 KPI 2개 추가 → 6개 컬럼
     kpi_cols = 6 if platform in ("SHEIN", "BOTH") else 4
     cols = st.columns(kpi_cols, gap="small")
     with cols[0]:
@@ -298,7 +278,6 @@ with st.container(border=True):
         st.metric("AOV", f"${aov:,.2f}", _delta_str(aov, paov))
     with cols[3]:
         st.metric("Canceled Order", f"{int(cancel_qty):,}", _delta_str(cancel_qty, pcancel))
-
     if platform in ("SHEIN", "BOTH"):
         label_prefix = "SHEIN " if platform == "BOTH" else ""
         with cols[4]:
@@ -322,19 +301,16 @@ def get_bestseller_labels(platform, df_sold, s, e):
         best = tmp.groupby("product description")["qty"].sum().sort_values(ascending=False).head(10)
         return list(best.index.astype(str))
     else:
-        # BOTH
         t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
         t = t[temu_sold_mask(t["order item status"])].copy()
         t["style_key"] = t["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
         t = t.dropna(subset=["style_key"])
         t_cnt = t.groupby("style_key")["quantity shipped"].sum()
-
         s2 = df_shein[(df_shein["order date"]>=s)&(df_shein["order date"]<=e)]
         s2 = s2[~shein_refund_mask(s2["order status"])].copy()
         s2["style_key"] = s2["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
         s2 = s2.dropna(subset=["style_key"])
         s_cnt = s2.groupby("style_key").size()
-
         mix = (pd.DataFrame({"t":t_cnt, "s":s_cnt}).fillna(0))
         mix["tot"] = mix["t"] + mix["s"]
         return list(mix["tot"].sort_values(ascending=False).head(10).index.astype(str))
@@ -356,24 +332,21 @@ for label, now, prev in [
         dir_ = "증가" if v >= 0 else "감소"
         bullets.append(f"• {label} **{dir_} {abs(v):.1f}%**")
 
-# --- NEW: 프로모션 비중/증감 인사이트
 if platform in ("SHEIN", "BOTH"):
     if qty_sum > 0:
         promo_ratio = promo_qty / qty_sum * 100
         bullets.append(f"• 프로모션 주문 비중 **{promo_ratio:.1f}%**")
     if locals().get("pqty", 0) > 0 and locals().get("ppromo_qty", None) is not None:
         prev_ratio = (ppromo_qty / pqty * 100) if pqty > 0 else None
-        if prev_ratio is not None:
-            diff = promo_ratio - prev_ratio if qty_sum > 0 else None
-            if diff is not None:
-                sign = "+" if diff >= 0 else ""
-                bullets.append(f"• 프로모션 비중 전기간 대비 **{sign}{diff:.1f}p**")
+        if prev_ratio is not None and qty_sum > 0:
+            diff = promo_ratio - prev_ratio
+            sign = "+" if diff >= 0 else ""
+            bullets.append(f"• 프로모션 비중 전기간 대비 **{sign}{diff:.1f}p**")
 
 if entered:
     bullets.append(f"• Top10 **신규 진입**: {', '.join(entered)} → 재고 확보/광고 확대 권장")
 if dropped:
     bullets.append(f"• Top10 **이탈**: {', '.join(dropped)} → 인벤토리/가격/노출 점검")
-
 bullets.append("• 체크리스트: 쿠폰/프로모션, 상위 상품 재고(핵심 사이즈), 경쟁가/리뷰, 이미지/타이틀")
 
 with st.container(border=True):
@@ -424,7 +397,7 @@ else:
     _ = box.line_chart(_daily[["Total_Sales","qty"]])
 
 # =========================
-# 7-1) (NEW) 프로모션 효과 요약 (SHEIN 전용)
+# 7-1) 프로모션 효과 요약 (SHEIN)
 # =========================
 if platform in ("SHEIN", "BOTH"):
     shein_cur = df_shein[(df_shein["order date"]>=start)&(df_shein["order date"]<=end)]
@@ -505,6 +478,5 @@ def best_table(platform, df_sold, s, e):
     return mix[["Image","Style Number","Sold Qty","TEMU Qty","SHEIN Qty"]]
 
 best_df = best_table(platform, df_sold, start, end)
-
 with st.container(border=True):
     st.markdown(best_df.to_html(escape=False, index=False), unsafe_allow_html=True)

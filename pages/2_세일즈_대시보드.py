@@ -115,97 +115,6 @@ def shein_promo_mask(df: pd.DataFrame) -> pd.Series:
     c2v = clean_money(c2 if c2 is not None else pd.Series([0]*len(df)))
     return (c1v.fillna(0) != 0) | (c2v.fillna(0) != 0)
 
-# ===== 실행 액션 자동 추천 (구체 체크리스트 포함) =====
-def build_action_recos(
-    platform: str,
-    sales_sum: float,
-    psales: float,
-    qty_sum: float,
-    pqty: float,
-    aov: float,
-    paov: float,
-    cancel_qty: float,
-    pcancel: float,
-    start: pd.Timestamp,
-    end: pd.Timestamp,
-):
-    recos = []
-
-    def pc(now, prev):
-        if prev in (0, None) or pd.isna(prev) or prev == 0:
-            return None
-        return (now - prev) / prev * 100.0
-
-    sales_pc  = pc(sales_sum, psales)
-    qty_pc    = pc(qty_sum, pqty)
-    aov_pc    = pc(aov, paov)
-    cancel_pc = pc(cancel_qty, pcancel)
-
-    # SHEIN 프로모션 비중
-    promo_ratio = None
-    try:
-        if platform in ("SHEIN", "BOTH"):
-            shein_cur = df_shein[(df_shein["order date"] >= start) & (df_shein["order date"] <= end)]
-            shein_cur = shein_cur[~shein_refund_mask(shein_cur["order status"])].copy()
-            if not shein_cur.empty:
-                p_mask = shein_promo_mask(shein_cur)
-                total_orders = len(shein_cur)
-                promo_orders = int(p_mask.sum())
-                promo_ratio = (promo_orders / total_orders * 100) if total_orders > 0 else 0.0
-    except Exception:
-        pass
-
-    # 베스트셀러 변동
-    cur_top  = get_bestseller_labels(platform, df_sold, start, end)
-    prev_top = get_bestseller_labels(platform, p_sold, prev_start, prev_end) if 'p_sold' in globals() else []
-    entered  = [x for x in cur_top if x not in prev_top]
-    dropped  = [x for x in prev_top if x not in cur_top]
-
-    # ① 매출/수량 하락 대응
-    if sales_pc is not None and sales_pc < -10:
-        recos.append("매출 하락: 플랫폼 내 노출/광고 점검 + 상위 3개 스타일 집중 노출 리프레시")
-    if qty_pc is not None and qty_pc < -10:
-        recos.append("주문수 하락: 베스트셀러 3종 타깃 쿠폰(낮은 %) 3~5일 테스트")
-
-    # ② AOV 대응
-    if aov_pc is not None and aov_pc < -5:
-        recos.append("AOV 하락: 코디 번들 제안/무료배송 최소구매액 소폭 상향 A/B 테스트")
-    elif aov_pc is not None and aov_pc > 5:
-        recos.append("AOV 상승 유지: 장바구니 추천 세트 이미지/카피 업데이트")
-
-    # ③ 취소 증가
-    if cancel_pc is not None and cancel_pc > 10:
-        recos.append("취소 증가: 사이즈/소재 설명 보강, 핵심 리뷰 상단 고정")
-
-    # ④ 프로모션 의존도 규칙
-    if promo_ratio is not None:
-        if promo_ratio >= 40 and (aov_pc is None or aov_pc <= 0):
-            recos.append("SHEIN: 프로모션 의존 높음(≥40%) → 할인율 3~5%p 단계적 하향 A/B 테스트")
-        elif promo_ratio < 20 and (sales_pc is not None and sales_pc < 0):
-            recos.append("SHEIN: 프로모션 낮음(<20%) & 매출 하락 → Top3 스타일 타깃 쿠폰 단기 집행")
-
-    # ⑤ 베스트셀러 변동
-    if entered:
-        recos.append(f"Top10 신규 진입 {', '.join(entered[:5])}: 재고/광고 예산 소폭 증액")
-    if dropped:
-        recos.append(f"Top10 이탈 {', '.join(dropped[:5])}: 썸네일/타이틀/가격 비교 및 재노출")
-
-    # ⑥ 구체 체크리스트(바로 실행형)
-    recos.extend([
-        "쿠폰/프로모션: 이번 주 할인율 vs 경쟁사(동일 카테고리) 비교, 종료 후 3일 매출 유지율 체크, 할인율 3~5%p A/B 계획서 작성",
-        "재고: Top5 스타일 각 사이즈 재고 ≥ (최근14일 평균 일판매량 × 14일), 재고<10 사이즈 리오더 요청",
-        "경쟁가/리뷰: 상위 10 스타일 경쟁가 ±5% 이내, 평점<4.0 상품은 상단 리뷰 고정·설명 보강",
-        "이미지/타이틀: CTR 하위 30% 썸네일 교체, 시즌 키워드(예: Fall/Holiday) 타이틀 삽입",
-        "PDP 개선: 사이즈표 첫 화면 배치, 소재/세탁법 한 줄 요약 추가",
-        "리포팅: 다음 주 월요일 오전 전주 대비 Sales/Qty/AOV/Promo Ratio 자동 확인",
-    ])
-
-    seen, uniq = set(), []
-    for r in recos:
-        if r not in seen:
-            uniq.append(r); seen.add(r)
-    return uniq[:10]
-
 # =========================
 # 1) Load data
 # =========================
@@ -268,7 +177,6 @@ def _apply_quick_range():
     st.session_state["sales_date_input"] = (s, e)
 
 with c2:
-    # value 명시로 위젯/세션 동기화
     st.date_input(
         "조회 기간",
         value=st.session_state["sales_date_input"],
@@ -284,7 +192,6 @@ with c2:
                  selection_mode="single", key="quick_range", on_change=_apply_quick_range)
 
 s_date, e_date = st.session_state["sales_date_input"]
-# 형 고정 + 경계 보정
 s_date = pd.to_datetime(s_date).date()
 e_date = pd.to_datetime(e_date).date()
 s_date = max(s_date, min_dt); e_date = min(e_date, max_dt)
@@ -435,26 +342,142 @@ with st.container(border=True):
     st.markdown("**자동 인사이트 & 액션 제안**")
     st.markdown("\n".join([f"- {b}" for b in bullets]) if bullets else "- 인사이트가 없습니다. 기간/플랫폼을 변경해 보세요.")
 
-# === 실행 액션 추천 블록 (구체 체크리스트) ===
-with st.container(border=True):
-    st.markdown("### 이번 기간 실행 권장 액션")
-    actions = build_action_recos(
-        platform=platform,
-        sales_sum=sales_sum, psales=psales,
-        qty_sum=qty_sum, pqty=pqty,
-        aov=aov, paov=paov,
-        cancel_qty=cancel_qty, pcancel=pcancel,
-        start=start, end=end,
-    )
-    if actions:
-        st.markdown("\n".join([f"- {a}" for a in actions]))
-        md = "## 실행 액션\n" + "\n".join([f"- {a}" for a in actions])
-        st.download_button("액션 체크리스트 .txt 다운로드", data=md, file_name="actions.txt")
-    else:
-        st.info("추천할 액션이 없습니다. 기간/플랫폼을 변경해 보세요.")
+# =========================
+# 6.5) 아이템 단위 액션 산출 유틸
+# =========================
+def _style_key_series_shein(df: pd.DataFrame) -> pd.Series:
+    return df["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
+
+def _style_key_series_temu(df: pd.DataFrame) -> pd.Series:
+    return df["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
+
+def _short_title_mask(series: pd.Series, thresh:int=25) -> pd.Series:
+    return series.astype(str).str.len().fillna(0) < thresh
 
 # =========================
-# 7) Daily Chart
+# 7) 실행 액션 (아이템 구체 리스트 포함)
+# =========================
+with st.container(border=True):
+    st.markdown("### 이번 기간 실행 권장 액션 (아이템 지정)")
+
+    actions = []
+
+    # 공통: 현재/전기간 스타일별 수량 집계
+    # TEMU: quantity shipped 합, SHEIN: 건수(=주문수)
+    # ---- 현재기간
+    t_cur = df_temu[(df_temu["order date"]>=start)&(df_temu["order date"]<=end)].copy()
+    t_cur["style_key"] = _style_key_series_temu(t_cur)
+    t_cur_sold = t_cur[temu_sold_mask(t_cur["order item status"])].dropna(subset=["style_key"])
+    t_cur_qty = t_cur_sold.groupby("style_key")["quantity shipped"].sum().astype(int)
+
+    s_cur = df_shein[(df_shein["order date"]>=start)&(df_shein["order date"]<=end)].copy()
+    s_cur["style_key"] = _style_key_series_shein(s_cur)
+    s_cur_sold = s_cur[~shein_refund_mask(s_cur["order status"])].dropna(subset=["style_key"])
+    s_cur_qty = s_cur_sold.groupby("style_key").size().astype(int)
+
+    # ---- 전기간
+    t_prev = df_temu[(df_temu["order date"]>=prev_start)&(df_temu["order date"]<=prev_end)].copy()
+    t_prev["style_key"] = _style_key_series_temu(t_prev)
+    t_prev_sold = t_prev[temu_sold_mask(t_prev["order item status"])].dropna(subset=["style_key"])
+    t_prev_qty = t_prev_sold.groupby("style_key")["quantity shipped"].sum().astype(int)
+
+    s_prev = df_shein[(df_shein["order date"]>=prev_start)&(df_shein["order date"]<=prev_end)].copy()
+    s_prev["style_key"] = _style_key_series_shein(s_prev)
+    s_prev_sold = s_prev[~shein_refund_mask(s_prev["order status"])].dropna(subset=["style_key"])
+    s_prev_qty = s_prev_sold.groupby("style_key").size().astype(int)
+
+    # 1) SHEIN 환불비율 높은 스타일 (현재기간)
+    if not s_cur.empty:
+        s_all_cur = s_cur.dropna(subset=["style_key"]).copy()
+        s_all_cur["is_refund"] = shein_refund_mask(s_all_cur["order status"])
+        refund_stats = s_all_cur.groupby("style_key")["is_refund"].mean().sort_values(ascending=False)
+        high_refund = refund_stats[refund_stats >= 0.15].head(5)  # 환불률 15% 이상
+        if not high_refund.empty:
+            for sk, r in high_refund.items():
+                actions.append(f"SHEIN 환불률 높음({r*100:.0f}%): {sk} → PDP 설명/사이즈 안내 보강 & 리뷰 상단 고정")
+    
+    # 2) TEMU 취소비율 높은 스타일 (현재기간)
+    if not t_cur.empty:
+        t_all_cur = t_cur.dropna(subset=["style_key"]).copy()
+        t_all_cur["is_cancel"] = temu_cancel_mask(t_all_cur["order item status"])
+        # 분모: 구매수(quantity purchased)가 있으면 그걸 사용, 없으면 라인수
+        qty_purchased = t_all_cur.groupby("style_key")["quantity purchased"].sum().replace(0, pd.NA)
+        cancel_cnt = t_all_cur.groupby("style_key")["is_cancel"].sum()
+        cancel_rate = (cancel_cnt / qty_purchased).fillna(cancel_cnt / cancel_cnt.where(cancel_cnt==0, other=1)).sort_values(ascending=False)
+        high_cancel = cancel_rate[cancel_rate >= 0.10].head(5)  # 취소율(러프) 10%+
+        if not high_cancel.empty:
+            for sk, r in high_cancel.items():
+                actions.append(f"TEMU 취소율 높음({r*100:.0f}%): {sk} → 상세/배송안내 보강 및 옵션/가격 점검")
+
+    # 3) 판매 급감 스타일(전기간 대비 -40% 이상) — 플랫폼별
+    # SHEIN
+    common_s = set(s_prev_qty.index).intersection(set(s_cur_qty.index))
+    if common_s:
+        s_drop = []
+        for sk in common_s:
+            prev_q = s_prev_qty.get(sk, 0); cur_q = s_cur_qty.get(sk, 0)
+            if prev_q > 0 and (cur_q - prev_q) / prev_q <= -0.4:
+                s_drop.append((sk, prev_q, cur_q))
+        s_drop = sorted(s_drop, key=lambda x: (x[1]-x[2]), reverse=True)[:5]
+        for sk, p, c in s_drop:
+            actions.append(f"SHEIN 판매 급감: {sk} ({p}→{c}) → 썸네일/타이틀/가격 비교 및 재노출")
+    # TEMU
+    common_t = set(t_prev_qty.index).intersection(set(t_cur_qty.index))
+    if common_t:
+        t_drop = []
+        for sk in common_t:
+            prev_q = t_prev_qty.get(sk, 0); cur_q = t_cur_qty.get(sk, 0)
+            if prev_q > 0 and (cur_q - prev_q) / prev_q <= -0.4:
+                t_drop.append((sk, prev_q, cur_q))
+        t_drop = sorted(t_drop, key=lambda x: (x[1]-x[2]), reverse=True)[:5]
+        for sk, p, c in t_drop:
+            actions.append(f"TEMU 판매 급감: {sk} ({p}→{c}) → 노출 리프레시/가격 점검/번들 제안")
+
+    # 4) 베스트셀러 Top10 이탈 항목(앞에서 계산한 dropped 사용)
+    for sk in dropped[:5]:
+        actions.append(f"Top10 이탈: {sk} → 광고·노출 재강화 및 경쟁가 점검")
+
+    # 5) 이미지 누락(썸네일 없는) 스타일 — 현재 판매 기준 상위에서만 체크
+    # SHEIN 현재 판매 상위 20
+    top_s = s_cur_sold.groupby("style_key").size().sort_values(ascending=False).head(20)
+    no_img_s = [sk for sk in top_s.index if not IMG_MAP.get(sk)]
+    for sk in no_img_s[:5]:
+        actions.append(f"SHEIN 이미지 없음: {sk} → 썸네일 업로드/교체")
+
+    # TEMU 현재 판매 상위 20
+    top_t = t_cur_sold.groupby("style_key")["quantity shipped"].sum().sort_values(ascending=False).head(20)
+    no_img_t = [sk for sk in top_t.index if not IMG_MAP.get(sk)]
+    for sk in no_img_t[:5]:
+        actions.append(f"TEMU 이미지 없음: {sk} → 썸네일 업로드/교체")
+
+    # 6) 타이틀 짧은 상품 (설명 보강 후보) — SHEIN 현재
+    # product description 길이가 짧은 상위 판매 상품
+    if not s_cur_sold.empty and "product description" in s_cur_sold.columns:
+        s_cur_sold = s_cur_sold.assign(
+            short_title=_short_title_mask(s_cur_sold["product description"], 25),
+            style_key=s_cur_sold["style_key"]
+        ).dropna(subset=["style_key"])
+        short_candidates = (s_cur_sold[s_cur_sold["short_title"]]
+                            .groupby("style_key").size().sort_values(ascending=False).index.tolist())
+        for sk in short_candidates[:5]:
+            actions.append(f"SHEIN 타이틀 짧음: {sk} → 핵심 키워드/시즌키워드 추가")
+
+    # 상한/중복 제거
+    seen=set(); final=[]
+    for a in actions:
+        if a not in seen:
+            final.append(a); seen.add(a)
+    final = final[:12]
+
+    if final:
+        st.markdown("\n".join([f"- {a}" for a in final]))
+        md = "## 실행 액션(아이템 지정)\n" + "\n".join([f"- {a}" for a in final])
+        st.download_button("액션 체크리스트 .txt 다운로드", data=md, file_name="actions_itemized.txt")
+    else:
+        st.info("추천할 아이템 단위 액션이 없습니다. 기간/플랫폼을 변경해 보세요.")
+
+# =========================
+# 8) Daily Chart
 # =========================
 def build_daily(platform: str, s: pd.Timestamp, e: pd.Timestamp) -> pd.DataFrame:
     if platform == "TEMU":
@@ -497,7 +520,7 @@ else:
     _ = box.line_chart(_daily[["Total_Sales","qty"]])
 
 # =========================
-# 8) Best Seller 10
+# 9) Best Seller 10
 # =========================
 st.subheader("Best Seller 10")
 

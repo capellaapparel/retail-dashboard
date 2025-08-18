@@ -34,7 +34,7 @@ st.markdown("""
 .best-card table tbody td:nth-child(2) { width:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .best-card table thead th:nth-child(n+3),
 .best-card table tbody td:nth-child(n+3) { width:120px; text-align:right; }
-img.thumb { width:84px; height:auto; border-radius:10px; }
+img.thumb { width:84px; height:auto; border-radius:12px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -115,7 +115,7 @@ def shein_promo_mask(df: pd.DataFrame) -> pd.Series:
     c2v = clean_money(c2 if c2 is not None else pd.Series([0]*len(df)))
     return (c1v.fillna(0) != 0) | (c2v.fillna(0) != 0)
 
-# ===== 실행 액션 자동 추천 =====
+# ===== 실행 액션 자동 추천 (구체 체크리스트 포함) =====
 def build_action_recos(
     platform: str,
     sales_sum: float,
@@ -141,7 +141,7 @@ def build_action_recos(
     aov_pc    = pc(aov, paov)
     cancel_pc = pc(cancel_qty, pcancel)
 
-    # 프로모션 비중
+    # SHEIN 프로모션 비중
     promo_ratio = None
     try:
         if platform in ("SHEIN", "BOTH"):
@@ -163,21 +163,21 @@ def build_action_recos(
 
     # ① 매출/수량 하락 대응
     if sales_pc is not None and sales_pc < -10:
-        recos.append("매출 하락: 플랫폼 내 노출/광고 점검 및 상위 3개 스타일 집중 노출 리프레시")
+        recos.append("매출 하락: 플랫폼 내 노출/광고 점검 + 상위 3개 스타일 집중 노출 리프레시")
     if qty_pc is not None and qty_pc < -10:
-        recos.append("주문수 하락: 베스트셀러 3종 한정 쿠폰(낮은 %) 3~5일 테스트")
+        recos.append("주문수 하락: 베스트셀러 3종 타깃 쿠폰(낮은 %) 3~5일 테스트")
 
-    # ② AOV
+    # ② AOV 대응
     if aov_pc is not None and aov_pc < -5:
-        recos.append("AOV 하락: 번들 제안(코디 세트) 또는 무료배송 최소구매액 소폭 상향")
+        recos.append("AOV 하락: 코디 번들 제안/무료배송 최소구매액 소폭 상향 A/B 테스트")
     elif aov_pc is not None and aov_pc > 5:
-        recos.append("AOV 상승 유지: 장바구니 추천(코디 세트) 이미지/카피 업데이트")
+        recos.append("AOV 상승 유지: 장바구니 추천 세트 이미지/카피 업데이트")
 
     # ③ 취소 증가
     if cancel_pc is not None and cancel_pc > 10:
-        recos.append("취소 증가: 사이즈/소재 설명 보강 및 핵심 리뷰 상단 고정")
+        recos.append("취소 증가: 사이즈/소재 설명 보강, 핵심 리뷰 상단 고정")
 
-    # ④ 프로모션 의존도
+    # ④ 프로모션 의존도 규칙
     if promo_ratio is not None:
         if promo_ratio >= 40 and (aov_pc is None or aov_pc <= 0):
             recos.append("SHEIN: 프로모션 의존 높음(≥40%) → 할인율 3~5%p 단계적 하향 A/B 테스트")
@@ -190,14 +190,21 @@ def build_action_recos(
     if dropped:
         recos.append(f"Top10 이탈 {', '.join(dropped[:5])}: 썸네일/타이틀/가격 비교 및 재노출")
 
-    # ⑥ 기본 체크리스트
-    recos.append("체크리스트: 쿠폰/프로모션 룰, 핵심 사이즈 재고, 경쟁가/리뷰, 이미지·타이틀 최신화")
+    # ⑥ 구체 체크리스트(바로 실행형)
+    recos.extend([
+        "쿠폰/프로모션: 이번 주 할인율 vs 경쟁사(동일 카테고리) 비교, 종료 후 3일 매출 유지율 체크, 할인율 3~5%p A/B 계획서 작성",
+        "재고: Top5 스타일 각 사이즈 재고 ≥ (최근14일 평균 일판매량 × 14일), 재고<10 사이즈 리오더 요청",
+        "경쟁가/리뷰: 상위 10 스타일 경쟁가 ±5% 이내, 평점<4.0 상품은 상단 리뷰 고정·설명 보강",
+        "이미지/타이틀: CTR 하위 30% 썸네일 교체, 시즌 키워드(예: Fall/Holiday) 타이틀 삽입",
+        "PDP 개선: 사이즈표 첫 화면 배치, 소재/세탁법 한 줄 요약 추가",
+        "리포팅: 다음 주 월요일 오전 전주 대비 Sales/Qty/AOV/Promo Ratio 자동 확인",
+    ])
 
     seen, uniq = set(), []
     for r in recos:
         if r not in seen:
             uniq.append(r); seen.add(r)
-    return uniq[:6]
+    return uniq[:10]
 
 # =========================
 # 1) Load data
@@ -261,7 +268,7 @@ def _apply_quick_range():
     st.session_state["sales_date_input"] = (s, e)
 
 with c2:
-    # FIX: value 명시로 위젯/세션 동기화
+    # value 명시로 위젯/세션 동기화
     st.date_input(
         "조회 기간",
         value=st.session_state["sales_date_input"],
@@ -277,7 +284,7 @@ with c2:
                  selection_mode="single", key="quick_range", on_change=_apply_quick_range)
 
 s_date, e_date = st.session_state["sales_date_input"]
-# FIX: 형 고정 + 경계 보정
+# 형 고정 + 경계 보정
 s_date = pd.to_datetime(s_date).date()
 e_date = pd.to_datetime(e_date).date()
 s_date = max(s_date, min_dt); e_date = min(e_date, max_dt)
@@ -403,11 +410,9 @@ for label, now, prev in [
         bullets.append(f"• {label} **{dir_} {abs(v):.1f}%**")
 
 if entered:
-    bullets.append(f"• Top10 **신규 진입**: {', '.join(entered[:5])} → 재고 확보/광고 확대 권장")
+    bullets.append(f"• Top10 **신규 진입**: {', '.join(entered[:5])} → 재고/광고 예산 소폭 증액")
 if dropped:
-    bullets.append(f"• Top10 **이탈**: {', '.join(dropped[:5])} → 인벤토리/가격/노출 점검")
-
-bullets.append("• 체크리스트: 쿠폰/프로모션, 상위 상품 재고(핵심 사이즈), 경쟁가/리뷰, 이미지/타이틀")
+    bullets.append(f"• Top10 **이탈**: {', '.join(dropped[:5])} → 썸네일/타이틀/가격 비교 및 재노출")
 
 # SHEIN 프로모션 인사이트
 try:
@@ -428,9 +433,9 @@ except Exception:
 
 with st.container(border=True):
     st.markdown("**자동 인사이트 & 액션 제안**")
-    st.markdown("\n".join([f"- {b}" for b in bullets]))
+    st.markdown("\n".join([f"- {b}" for b in bullets]) if bullets else "- 인사이트가 없습니다. 기간/플랫폼을 변경해 보세요.")
 
-# === 실행 액션 추천 블록 ===
+# === 실행 액션 추천 블록 (구체 체크리스트) ===
 with st.container(border=True):
     st.markdown("### 이번 기간 실행 권장 액션")
     actions = build_action_recos(

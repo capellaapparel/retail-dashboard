@@ -59,16 +59,26 @@ def load_google_sheet(sheet_name: str) -> pd.DataFrame:
 
 def parse_temudate(x):
     s = str(x)
-    if "(" in s: s = s.split("(")[0].strip()
-    try: return parser.parse(s, fuzzy=True)
-    except Exception: return pd.NaT
+    if "(" in s:
+        s = s.split("(")[0].strip()
+    try:
+        return parser.parse(s, fuzzy=True)
+    except Exception:
+        return pd.NaT
 
 def parse_sheindate(x):
-    try: return pd.to_datetime(str(x), errors="coerce", infer_datetime_format=True)
-    except Exception: return pd.NaT
+    try:
+        return pd.to_datetime(str(x), errors="coerce", infer_datetime_format=True)
+    except Exception:
+        return pd.NaT
 
 def clean_money(s: pd.Series) -> pd.Series:
-    return (s.astype(str).str.replace(r"[^0-9.\-]", "", regex=True).replace("", pd.NA).astype(float))
+    return (
+        s.astype(str)
+         .str.replace(r"[^0-9.\-]", "", regex=True)
+         .replace("", pd.NA)
+         .astype(float)
+    )
 
 def _safe_minmax(*series):
     s = pd.concat([pd.to_datetime(x, errors="coerce") for x in series], ignore_index=True).dropna()
@@ -78,24 +88,30 @@ def _safe_minmax(*series):
     return s.min().date(), s.max().date()
 
 STYLE_RE = re.compile(r"\b([A-Z]{1,3}\d{3,5}[A-Z0-9]?)\b")
+
 def build_img_map(df_info: pd.DataFrame):
     keys = df_info["product number"].astype(str).str.upper().str.replace(" ", "", regex=False)
     return dict(zip(keys, df_info["image"]))
 
 def style_key_from_label(label: str, img_map: dict) -> str | None:
     s = str(label).strip().upper()
-    if not s: return None
+    if not s:
+        return None
     s_key = s.replace(" ", "")
-    if s_key in img_map: return s_key
+    if s_key in img_map:
+        return s_key
     m = STYLE_RE.search(s)
     if m:
         cand = m.group(1).replace(" ", "")
-        if cand in img_map: return cand
+        if cand in img_map:
+            return cand
     for k in img_map.keys():
-        if k in s_key: return k
+        if k in s_key:
+            return k
     return None
 
-def img_tag(url): return f"<img src='{url}' class='thumb'>" if str(url).startswith("http") else ""
+def img_tag(url): 
+    return f"<img src='{url}' class='thumb'>" if str(url).startswith("http") else ""
 
 # robust status helpers
 def temu_sold_mask(s: pd.Series) -> pd.Series:
@@ -116,8 +132,19 @@ def shein_promo_mask(df: pd.DataFrame) -> pd.Series:
     return (c1v.fillna(0) != 0) | (c2v.fillna(0) != 0)
 
 def _normalize_style_input(s: str | None) -> str | None:
-    if not s: return None
+    if not s:
+        return None
     return str(s).upper().replace(" ", "")
+
+# Style-key helpers placed early to avoid forward-ref issues
+def _style_key_series_shein(df: pd.DataFrame) -> pd.Series:
+    return df["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
+
+def _style_key_series_temu(df: pd.DataFrame) -> pd.Series:
+    return df["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
+
+def _short_title_mask(series: pd.Series, thresh:int=25) -> pd.Series:
+    return series.astype(str).str.len().fillna(0) < thresh
 
 # =========================
 # 1) Load data
@@ -147,8 +174,10 @@ def _clamp_date(d) -> pd.Timestamp.date:
     d_date = pd.to_datetime(d).date()
     mn = pd.to_datetime(min_dt).date()
     mx = pd.to_datetime(max_dt).date()
-    if d_date < mn: d_date = mn
-    if d_date > mx: d_date = mx
+    if d_date < mn:
+        d_date = mn
+    if d_date > mx:
+        d_date = mx
     return d_date
 
 default_start = _clamp_date(today_ts - pd.Timedelta(days=6))
@@ -163,7 +192,8 @@ with c1:
 
 def _apply_quick_range():
     label = st.session_state.get("quick_range")
-    if not label: return
+    if not label:
+        return
     if label == "최근 1주":
         s = today_ts - pd.Timedelta(days=6); e = today_ts
     elif label == "최근 1개월":
@@ -177,7 +207,8 @@ def _apply_quick_range():
     else:
         return
     s = _clamp_date(s); e = _clamp_date(e)
-    if e < s: e = s
+    if e < s:
+        e = s
     st.session_state["sales_date_input"] = (s, e)
 
 with c2:
@@ -199,7 +230,8 @@ s_date, e_date = st.session_state["sales_date_input"]
 s_date = pd.to_datetime(s_date).date()
 e_date = pd.to_datetime(e_date).date()
 s_date = max(s_date, min_dt); e_date = min(e_date, max_dt)
-if e_date < s_date: e_date = s_date
+if e_date < s_date:
+    e_date = s_date
 start = pd.to_datetime(s_date)
 end   = pd.to_datetime(e_date) + pd.Timedelta(hours=23, minutes=59, seconds=59)
 
@@ -208,30 +240,26 @@ prev_start  = start - pd.Timedelta(days=period_days)
 prev_end    = start - pd.Timedelta(seconds=1)
 
 # =========================
-# ⭐ NEW: Style Search (스타일번호 검색)
+# ⭐ Style Search (스타일번호 검색)
 # =========================
 with st.container(border=True):
     st.markdown("### 스타일번호 검색 (기간/플랫폼 적용)")
     cols = st.columns([2.2, 1, 1.2, 1.2])
     with cols[0]:
-        style_search = st.text_input("Style Number 입력 (예: BT5603)", key="style_search").strip()
+        _raw_input = st.text_input("Style Number 입력 (예: BT5603)", key="style_search")
+        style_search = _raw_input.strip() if _raw_input else ""
     with cols[1]:
         do_search = st.button("검색")
-    # 엔터로도 반응하도록
+
+    # 엔터 입력도 동작하도록 (텍스트가 있으면 즉시 실행)
     if style_search and not do_search:
         do_search = True
-
-    def _style_key_series_shein(df: pd.DataFrame) -> pd.Series:
-        return df["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
-    def _style_key_series_temu(df: pd.DataFrame) -> pd.Series:
-        return df["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
 
     if do_search:
         skey = _normalize_style_input(style_search)
         if not skey:
             st.warning("유효한 스타일번호를 입력하세요.")
         else:
-            # 각 플랫폼 범위 내 판매 라인 생성
             res_tables = []
             total_sales = 0.0
             total_qty   = 0
@@ -247,14 +275,15 @@ with st.container(border=True):
                     sales = t["base price total"].sum()
                     total_qty += int(qty)
                     total_sales += float(sales)
-                    # 일별 집계
-                    t_daily = (t.groupby(pd.Grouper(key="order date", freq="D"))
-                               .agg(qty=("quantity shipped","sum"), sales=("base price total","sum"))
-                               .reset_index())
-                    t["Platform"] = "TEMU"
-                    res_tables.append(("TEMU", t_daily, t[["order date","product number","quantity shipped","base price total"]].rename(columns={
-                        "product number":"Product", "quantity shipped":"Qty", "base price total":"Sales"
-                    })))
+                    t_daily = (
+                        t.groupby(pd.Grouper(key="order date", freq="D"))
+                         .agg(qty=("quantity shipped","sum"), sales=("base price total","sum"))
+                         .reset_index()
+                    )
+                    t_table = t[["order date","product number","quantity shipped","base price total"]].rename(
+                        columns={"product number":"Product", "quantity shipped":"Qty", "base price total":"Sales"}
+                    )
+                    res_tables.append(("TEMU", t_daily, t_table))
 
             # SHEIN
             if platform in ("SHEIN", "BOTH"):
@@ -268,31 +297,34 @@ with st.container(border=True):
                     total_qty += int(qty)
                     total_sales += float(sales)
                     s["qty"] = 1
-                    s_daily = (s.groupby(pd.Grouper(key="order date", freq="D"))
-                               .agg(qty=("qty","sum"), sales=("product price","sum"))
-                               .reset_index())
-                    s["Platform"] = "SHEIN"
-                    res_tables.append(("SHEIN", s_daily, s[["order date","product description","product price"]].rename(columns={
-                        "product description":"Product", "product price":"Sales"
-                    })))
+                    s_daily = (
+                        s.groupby(pd.Grouper(key="order date", freq="D"))
+                         .agg(qty=("qty","sum"), sales=("product price","sum"))
+                         .reset_index()
+                    )
+                    s_table = s[["order date","product description","product price"]].rename(
+                        columns={"product description":"Product", "product price":"Sales"}
+                    )
+                    res_tables.append(("SHEIN", s_daily, s_table))
 
-             if total_qty == 0:
+            if total_qty == 0:
                 st.info("해당 기간/플랫폼에서 일치하는 스타일 판매가 없습니다.")
             else:
-                # --- 추가: 플랫폼별 요약 집계 ---
+                # 플랫폼별 요약
                 plat_rows = []
-                for label, daily, table in res_tables:
+                for label, _daily_df, table in res_tables:
                     if label == "TEMU":
-                        p_qty = table["Qty"].sum() if "Qty" in table.columns else 0
-                        p_sales = table["Sales"].sum() if "Sales" in table.columns else 0.0
+                        p_qty = int(table["Qty"].sum()) if "Qty" in table.columns else 0
+                        p_sales = float(table["Sales"].sum()) if "Sales" in table.columns else 0.0
                     else:
-                        # SHEIN 테이블은 Qty 컬럼이 없고 한 행=1건이므로 건수로 계산
-                        p_qty = len(table)
-                        p_sales = table["Sales"].sum() if "Sales" in table.columns else 0.0
-                    plat_rows.append({"Platform": label,
-                                      "Sales": float(p_sales),
-                                      "Qty": int(p_qty),
-                                      "AOV": (float(p_sales) / int(p_qty)) if int(p_qty) > 0 else 0.0})
+                        p_qty = int(len(table))
+                        p_sales = float(table["Sales"].sum()) if "Sales" in table.columns else 0.0
+                    plat_rows.append({
+                        "Platform": label,
+                        "Sales": p_sales,
+                        "Qty": p_qty,
+                        "AOV": (p_sales / p_qty) if p_qty > 0 else 0.0
+                    })
                 plat_df = pd.DataFrame(plat_rows).sort_values("Sales", ascending=False)
 
                 # 총계 KPI
@@ -307,11 +339,14 @@ with st.container(border=True):
                 with c4:
                     thumb = IMG_MAP.get(skey, "")
                     if thumb:
-                        st.markdown(f"<div style='text-align:center'>{img_tag(thumb)}<div style='font-size:12px;color:#666'>{skey}</div></div>", unsafe_allow_html=True)
+                        st.markdown(
+                            f"<div style='text-align:center'>{img_tag(thumb)}"
+                            f"<div style='font-size:12px;color:#666'>{skey}</div></div>",
+                            unsafe_allow_html=True
+                        )
                     else:
                         st.caption(f"이미지 없음 • {skey}")
 
-                # --- 추가: 플랫폼별 요약 테이블 보여주기 ---
                 st.markdown("**플랫폼별 요약 (Style Breakdown)**")
                 st.dataframe(
                     plat_df.assign(
@@ -322,11 +357,11 @@ with st.container(border=True):
                     use_container_width=True
                 )
 
-                # 기존: 일별 추이 & 원시표
-                for label, daily, table in res_tables:
+                # 일별 추이 & 원시표
+                for label, daily_df, table in res_tables:
                     st.markdown(f"**{label} - {skey} 일별 추이**")
-                    if not daily.empty:
-                        st.line_chart(daily.set_index("order date")[["sales","qty"]])
+                    if not daily_df.empty:
+                        st.line_chart(daily_df.set_index("order date")[["sales","qty"]])
                     st.dataframe(table.sort_values("order date", ascending=False), use_container_width=True)
 
 # =========================
@@ -378,7 +413,8 @@ else:
 # 5) KPI
 # =========================
 def _delta_str(now, prev):
-    if prev in (0, None) or pd.isna(prev): return "—"
+    if prev in (0, None) or pd.isna(prev):
+        return "—"
     pct = (now - prev) / prev * 100
     sign = "+" if pct >= 0 else ""
     return f"{sign}{pct:.1f}%"
@@ -399,7 +435,8 @@ with st.container(border=True):
 # 6) Insights
 # =========================
 def _pc(cur, prev):
-    if prev in (0, None) or pd.isna(prev): return None
+    if prev in (0, None) or pd.isna(prev):
+        return None
     return (cur - prev) / prev * 100.0
 
 def get_bestseller_labels(platform, df_sold, s, e):
@@ -469,18 +506,6 @@ with st.container(border=True):
     st.markdown("\n".join([f"- {b}" for b in bullets]) if bullets else "- 인사이트가 없습니다. 기간/플랫폼을 변경해 보세요.")
 
 # =========================
-# 6.5) 아이템 단위 액션 산출 유틸
-# =========================
-def _style_key_series_shein(df: pd.DataFrame) -> pd.Series:
-    return df["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
-
-def _style_key_series_temu(df: pd.DataFrame) -> pd.Series:
-    return df["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
-
-def _short_title_mask(series: pd.Series, thresh:int=25) -> pd.Series:
-    return series.astype(str).str.len().fillna(0) < thresh
-
-# =========================
 # 7) 실행 액션 (아이템 구체 리스트 포함)
 # =========================
 with st.container(border=True):
@@ -488,7 +513,7 @@ with st.container(border=True):
 
     actions = []
 
-    # 공통: 현재/전기간 스타일별 수량 집계
+    # 현재/전기간 스타일별 수량 집계
     # TEMU: quantity shipped 합, SHEIN: 건수(=주문수)
     # ---- 현재기간
     t_cur = df_temu[(df_temu["order date"]>=start)&(df_temu["order date"]<=end)].copy()
@@ -512,24 +537,24 @@ with st.container(border=True):
     s_prev_sold = s_prev[~shein_refund_mask(s_prev["order status"])].dropna(subset=["style_key"])
     s_prev_qty = s_prev_sold.groupby("style_key").size().astype(int)
 
-    # 1) SHEIN 환불비율 높은 스타일 (현재기간)
+    # 1) SHEIN 환불비율 높은 스타일
     if not s_cur.empty:
         s_all_cur = s_cur.dropna(subset=["style_key"]).copy()
         s_all_cur["is_refund"] = shein_refund_mask(s_all_cur["order status"])
         refund_stats = s_all_cur.groupby("style_key")["is_refund"].mean().sort_values(ascending=False)
-        high_refund = refund_stats[refund_stats >= 0.15].head(5)
+        high_refund = refund_stats[refund_stats >= 0.15].head(5)  # 환불률 15% 이상
         if not high_refund.empty:
             for sk, r in high_refund.items():
                 actions.append(f"SHEIN 환불률 높음({r*100:.0f}%): {sk} → PDP 설명/사이즈 안내 보강 & 리뷰 상단 고정")
-    
-    # 2) TEMU 취소비율 높은 스타일 (현재기간)
+
+    # 2) TEMU 취소비율 높은 스타일
     if not t_cur.empty:
         t_all_cur = t_cur.dropna(subset=["style_key"]).copy()
         t_all_cur["is_cancel"] = temu_cancel_mask(t_all_cur["order item status"])
         qty_purchased = t_all_cur.groupby("style_key")["quantity purchased"].sum().replace(0, pd.NA)
         cancel_cnt = t_all_cur.groupby("style_key")["is_cancel"].sum()
         cancel_rate = (cancel_cnt / qty_purchased).fillna(cancel_cnt / cancel_cnt.where(cancel_cnt==0, other=1)).sort_values(ascending=False)
-        high_cancel = cancel_rate[cancel_rate >= 0.10].head(5)
+        high_cancel = cancel_rate[cancel_rate >= 0.10].head(5)  # 10%+
         if not high_cancel.empty:
             for sk, r in high_cancel.items():
                 actions.append(f"TEMU 취소율 높음({r*100:.0f}%): {sk} → 상세/배송안내 보강 및 옵션/가격 점검")
@@ -546,6 +571,7 @@ with st.container(border=True):
         s_drop = sorted(s_drop, key=lambda x: (x[1]-x[2]), reverse=True)[:5]
         for sk, p, c in s_drop:
             actions.append(f"SHEIN 판매 급감: {sk} ({p}→{c}) → 썸네일/타이틀/가격 비교 및 재노출")
+
     # TEMU
     common_t = set(t_prev_qty.index).intersection(set(t_cur_qty.index))
     if common_t:
@@ -559,7 +585,6 @@ with st.container(border=True):
             actions.append(f"TEMU 판매 급감: {sk} ({p}→{c}) → 노출 리프레시/가격 점검/번들 제안")
 
     # 4) 베스트셀러 Top10 이탈 항목
-    dropped = [x for x in get_bestseller_labels(platform, p_sold, prev_start, prev_end) if x not in get_bestseller_labels(platform, df_sold, start, end)] if 'p_sold' in locals() else []
     for sk in dropped[:5]:
         actions.append(f"Top10 이탈: {sk} → 광고·노출 재강화 및 경쟁가 점검")
 
@@ -580,15 +605,21 @@ with st.container(border=True):
             short_title=_short_title_mask(s_cur_sold["product description"], 25),
             style_key=s_cur_sold["style_key"]
         ).dropna(subset=["style_key"])
-        short_candidates = (s_cur_sold[s_cur_sold["short_title"]]
-                            .groupby("style_key").size().sort_values(ascending=False).index.tolist())
+        short_candidates = (
+            s_cur_sold[s_cur_sold["short_title"]]
+            .groupby("style_key").size()
+            .sort_values(ascending=False).index.tolist()
+        )
         for sk in short_candidates[:5]:
             actions.append(f"SHEIN 타이틀 짧음: {sk} → 핵심 키워드/시즌키워드 추가")
 
-    seen=set(); final=[]
+    # 상한/중복 제거
+    seen = set()
+    final = []
     for a in actions:
         if a not in seen:
-            final.append(a); seen.add(a)
+            final.append(a)
+            seen.add(a)
     final = final[:12]
 
     if final:
@@ -648,25 +679,29 @@ st.subheader("Best Seller 10")
 
 def best_table(platform, df_sold, s, e):
     if platform == "TEMU":
-        g = (df_sold.assign(style_key=lambda d: d["product number"].astype(str)
-                             .apply(lambda x: style_key_from_label(x, IMG_MAP)))
-             .dropna(subset=["style_key"])
-             .groupby("style_key")["quantity shipped"].sum().astype(int).reset_index())
+        g = (
+            df_sold.assign(style_key=lambda d: d["product number"].astype(str)
+                           .apply(lambda x: style_key_from_label(x, IMG_MAP)))
+                  .dropna(subset=["style_key"])
+                  .groupby("style_key")["quantity shipped"].sum().astype(int).reset_index()
+        )
         g = g.rename(columns={"style_key":"Style Number","quantity shipped":"Sold Qty"})
         g["Image"] = g["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
         return g[["Image","Style Number","Sold Qty"]].sort_values("Sold Qty", ascending=False).head(10)
 
     if platform == "SHEIN":
         tmp = df_sold.copy(); tmp["qty"] = 1
-        g = (tmp.assign(style_key=lambda d: d["product description"].astype(str)
-                        .apply(lambda x: style_key_from_label(x, IMG_MAP)))
-             .dropna(subset=["style_key"])
-             .groupby("style_key")["qty"].sum().astype(int).reset_index())
+        g = (
+            tmp.assign(style_key=lambda d: d["product description"].astype(str)
+                       .apply(lambda x: style_key_from_label(x, IMG_MAP)))
+               .dropna(subset=["style_key"])
+               .groupby("style_key")["qty"].sum().astype(int).reset_index()
+        )
         g = g.rename(columns={"style_key":"Style Number","qty":"Sold Qty"})
         g["Image"] = g["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
         return g[["Image","Style Number","Sold Qty"]].sort_values("Sold Qty", ascending=False).head(10)
 
-      # BOTH
+    # BOTH
     t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)&
                 (temu_sold_mask(df_temu["order item status"]))].copy()
     t["style_key"] = t["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
@@ -682,19 +717,22 @@ def best_table(platform, df_sold, s, e):
     mix = pd.DataFrame({"TEMU Qty": t_group, "SHEIN Qty": s_group}).fillna(0).astype(int)
     mix["Sold Qty"] = (mix["TEMU Qty"] + mix["SHEIN Qty"]).astype(int)
     mix = mix.sort_values("Sold Qty", ascending=False).head(10).reset_index()
-    if "index" in mix.columns: mix = mix.rename(columns={"index":"Style Number"})
-    elif "style_key" in mix.columns: mix = mix.rename(columns={"style_key":"Style Number"})
-    elif "Style Number" not in mix.columns: mix["Style Number"] = mix.index.astype(str)
+    if "index" in mix.columns:
+        mix = mix.rename(columns={"index":"Style Number"})
+    elif "style_key" in mix.columns:
+        mix = mix.rename(columns={"style_key":"Style Number"})
+    elif "Style Number" not in mix.columns:
+        mix["Style Number"] = mix.index.astype(str)
     mix["Image"] = mix["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
 
-    # --- 추가: 플랫폼 배지 열 ---
+    # 플랫폼 배지
     def badge_row(row):
-        t = int(row["TEMU Qty"]); s = int(row["SHEIN Qty"])
+        t_val = int(row["TEMU Qty"]); s_val = int(row["SHEIN Qty"])
         return (
             f"<span style='display:inline-block;padding:4px 8px;border-radius:10px;background:#eef6ff;color:#1456b8;font-size:12px;'>"
-            f"TEMU {t:,}</span> "
+            f"TEMU {t_val:,}</span> "
             f"<span style='display:inline-block;padding:4px 8px;border-radius:10px;background:#fff1f0;color:#b81414;font-size:12px;'>"
-            f"SHEIN {s:,}</span>"
+            f"SHEIN {s_val:,}</span>"
         )
     mix["Platform Mix"] = mix.apply(badge_row, axis=1)
 

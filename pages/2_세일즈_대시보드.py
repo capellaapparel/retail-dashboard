@@ -276,9 +276,26 @@ with st.container(border=True):
                         "product description":"Product", "product price":"Sales"
                     })))
 
-            if total_qty == 0:
+             if total_qty == 0:
                 st.info("해당 기간/플랫폼에서 일치하는 스타일 판매가 없습니다.")
             else:
+                # --- 추가: 플랫폼별 요약 집계 ---
+                plat_rows = []
+                for label, daily, table in res_tables:
+                    if label == "TEMU":
+                        p_qty = table["Qty"].sum() if "Qty" in table.columns else 0
+                        p_sales = table["Sales"].sum() if "Sales" in table.columns else 0.0
+                    else:
+                        # SHEIN 테이블은 Qty 컬럼이 없고 한 행=1건이므로 건수로 계산
+                        p_qty = len(table)
+                        p_sales = table["Sales"].sum() if "Sales" in table.columns else 0.0
+                    plat_rows.append({"Platform": label,
+                                      "Sales": float(p_sales),
+                                      "Qty": int(p_qty),
+                                      "AOV": (float(p_sales) / int(p_qty)) if int(p_qty) > 0 else 0.0})
+                plat_df = pd.DataFrame(plat_rows).sort_values("Sales", ascending=False)
+
+                # 총계 KPI
                 aov = total_sales / total_qty if total_qty > 0 else 0.0
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
@@ -294,7 +311,18 @@ with st.container(border=True):
                     else:
                         st.caption(f"이미지 없음 • {skey}")
 
-                # 일별 미니 차트 & 원시 테이블
+                # --- 추가: 플랫폼별 요약 테이블 보여주기 ---
+                st.markdown("**플랫폼별 요약 (Style Breakdown)**")
+                st.dataframe(
+                    plat_df.assign(
+                        Sales=lambda d: d["Sales"].map(lambda x: f"${x:,.2f}"),
+                        Qty=lambda d: d["Qty"].map(lambda x: f"{x:,}"),
+                        AOV=lambda d: d["AOV"].map(lambda x: f"${x:,.2f}"),
+                    ),
+                    use_container_width=True
+                )
+
+                # 기존: 일별 추이 & 원시표
                 for label, daily, table in res_tables:
                     st.markdown(f"**{label} - {skey} 일별 추이**")
                     if not daily.empty:
@@ -638,7 +666,7 @@ def best_table(platform, df_sold, s, e):
         g["Image"] = g["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
         return g[["Image","Style Number","Sold Qty"]].sort_values("Sold Qty", ascending=False).head(10)
 
-    # BOTH
+      # BOTH
     t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)&
                 (temu_sold_mask(df_temu["order item status"]))].copy()
     t["style_key"] = t["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
@@ -658,7 +686,19 @@ def best_table(platform, df_sold, s, e):
     elif "style_key" in mix.columns: mix = mix.rename(columns={"style_key":"Style Number"})
     elif "Style Number" not in mix.columns: mix["Style Number"] = mix.index.astype(str)
     mix["Image"] = mix["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
-    return mix[["Image","Style Number","Sold Qty","TEMU Qty","SHEIN Qty"]]
+
+    # --- 추가: 플랫폼 배지 열 ---
+    def badge_row(row):
+        t = int(row["TEMU Qty"]); s = int(row["SHEIN Qty"])
+        return (
+            f"<span style='display:inline-block;padding:4px 8px;border-radius:10px;background:#eef6ff;color:#1456b8;font-size:12px;'>"
+            f"TEMU {t:,}</span> "
+            f"<span style='display:inline-block;padding:4px 8px;border-radius:10px;background:#fff1f0;color:#b81414;font-size:12px;'>"
+            f"SHEIN {s:,}</span>"
+        )
+    mix["Platform Mix"] = mix.apply(badge_row, axis=1)
+
+    return mix[["Image","Style Number","Sold Qty","Platform Mix","TEMU Qty","SHEIN Qty"]]
 
 best_df = best_table(platform, df_sold, start, end)
 with st.container(border=True):

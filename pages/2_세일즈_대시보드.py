@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import re
 from dateutil import parser
-import matplotlib.pyplot as plt
+import altair as alt
 
 # =========================
 # Page
@@ -198,11 +198,23 @@ def _agg_variant(df: pd.DataFrame, is_shein: bool) -> tuple[pd.DataFrame, pd.Dat
     return color_df, size_df
 
 def _donut_chart(labels, values, title: str):
-    fig, ax = plt.subplots()
-    ax.pie(values, labels=labels, autopct='%1.1f%%', startangle=90, wedgeprops=dict(width=0.4))
-    ax.set_title(title)
-    ax.axis('equal')
-    st.pyplot(fig)
+    if len(values) == 0 or pd.Series(values).fillna(0).sum() == 0:
+        st.caption("차트 표시할 데이터가 없습니다")
+        return
+    data = pd.DataFrame({"label": pd.Series(labels, dtype="string"),
+                         "value": pd.to_numeric(values, errors="coerce").fillna(0)})
+    chart = (
+        alt.Chart(data)
+        .mark_arc(innerRadius=60)   # 도넛(빈 가운데)
+        .encode(
+            theta=alt.Theta("value:Q", stack=True),
+            color=alt.Color("label:N", legend=alt.Legend(title="")),
+            tooltip=[alt.Tooltip("label:N", title="항목"),
+                     alt.Tooltip("value:Q", title="수량", format=",")]
+        )
+        .properties(width=320, height=260, title=title)
+    )
+    st.altair_chart(chart, use_container_width=False)
 
 # =========================
 # 1) Load data

@@ -72,13 +72,25 @@ def parse_sheindate(x):
     except Exception:
         return pd.NaT
 
-def clean_money(s: pd.Series) -> pd.Series:
-    return (
-        s.astype(str)
-         .str.replace(r"[^0-9.\-]", "", regex=True)
-         .replace("", pd.NA)
-         .astype(float)
-    )
+def clean_money(x) -> pd.Series:
+    """입력 타입 무엇이든 안전하게 숫자(float) 시리즈로 변환"""
+    # 1) 시리즈로 보정
+    s = x if isinstance(x, pd.Series) else pd.Series(x)
+    # 2) 문자열화
+    s = s.astype(str)
+    # 3) 숫자/부호/소수점만 남기기
+    s = s.str.replace(r"[^0-9.\-]", "", regex=True)
+    # 4) 빈 문자열 -> NaN
+    s = s.replace("", pd.NA)
+    # 5) 안전 변환
+    s = pd.to_numeric(s, errors="coerce")
+    return s  # NaN은 그대로 두고, 합/평균 시에는 자동 무시됨
+
+def ensure_series(df: pd.DataFrame, col: str, default: float = 0.0) -> pd.Series:
+    """df에 col 없으면 인덱스 맞춘 기본값 시리즈 반환"""
+    if col in df.columns:
+        return df[col]
+    return pd.Series([default] * len(df), index=df.index, dtype=float)
 
 def _safe_minmax(*series):
     s = pd.concat([pd.to_datetime(x, errors="coerce") for x in series], ignore_index=True).dropna()
@@ -91,7 +103,7 @@ STYLE_RE = re.compile(r"\b([A-Z]{1,3}\d{3,5}[A-Z0-9]?)\b")
 
 def build_img_map(df_info: pd.DataFrame):
     keys = df_info["product number"].astype(str).str.upper().str.replace(" ", "", regex=False)
-    return dict(zip(keys, df_info["image"]))
+    return dict(zip(keys, df_info.get("image", pd.Series(index=df_info.index)).fillna("")))
 
 def style_key_from_label(label: str, img_map: dict) -> str | None:
     s = str(label).strip().upper()
@@ -110,7 +122,7 @@ def style_key_from_label(label: str, img_map: dict) -> str | None:
             return k
     return None
 
-def img_tag(url): 
+def img_tag(url):
     return f"<img src='{url}' class='thumb'>" if str(url).startswith("http") else ""
 
 # robust status helpers
@@ -125,18 +137,18 @@ def shein_refund_mask(s: pd.Series) -> pd.Series:
 
 # SHEIN 프로모션 여부
 def shein_promo_mask(df: pd.DataFrame) -> pd.Series:
-    c1 = df.get("coupon discount")
-    c2 = df.get("store campaign discount")
-    c1v = clean_money(c1 if c1 is not None else pd.Series([0]*len(df)))
-    c2v = clean_money(c2 if c2 is not None else pd.Series([0]*len(df)))
-    return (c1v.fillna(0) != 0) | (c2v.fillna(0) != 0)
+    c1 = ensure_series(df, "coupon discount", default=0.0)
+    c2 = ensure_series(df, "store campaign discount", default=0.0)
+    c1v = clean_money(c1).fillna(0)
+    c2v = clean_money(c2).fillna(0)
+    return (c1v != 0) | (c2v != 0)
 
 def _normalize_style_input(s: str | None) -> str | None:
     if not s:
         return None
     return str(s).upper().replace(" ", "")
 
-# Style-key helpers placed early to avoid forward-ref issues
+# Style-key helpers
 def _style_key_series_shein(df: pd.DataFrame) -> pd.Series:
     return df["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
 
@@ -157,12 +169,15 @@ IMG_MAP = build_img_map(df_info)
 # Normalize
 df_temu["order date"] = df_temu["purchase date"].apply(parse_temudate)
 df_shein["order date"] = df_shein["order processed on"].apply(parse_sheindate)
+
 df_temu["order item status"] = df_temu["order item status"].astype(str)
-df_temu["quantity shipped"] = pd.to_numeric(df_temu.get("quantity shipped", 0), errors="coerce").fillna(0)
-df_temu["quantity purchased"] = pd.to_numeric(df_temu.get("quantity purchased", 0), errors="coerce").fillna(0)
-df_temu["base price total"] = clean_money(df_temu.get("base price total", pd.Series(dtype=str)))
+df_temu["quantity shipped"] = pd.to_numeric(ensure_series(df_temu, "quantity shipped", 0.0), errors="coerce").fillna(0)
+df_temu["quantity purchased"] = pd.to_numeric(ensure_series(df_temu, "quantity purchased", 0.0), errors="coerce").fillna(0)
+
+# 🔧 금액 컬럼 방어적 처리
+df_temu["base price total"] = clean_money(ensure_series(df_temu, "base price total", 0.0)).fillna(0.0)
 df_shein["order status"] = df_shein["order status"].astype(str)
-df_shein["product price"] = clean_money(df_shein.get("product price", pd.Series(dtype=str)))
+df_shein["product price"] = clean_money(ensure_series(df_shein, "product price", 0.0)).fillna(0.0)
 
 # =========================
 # 2) Date Controls (동기화 패치)
@@ -251,7 +266,6 @@ with st.container(border=True):
     with cols[1]:
         do_search = st.button("검색")
 
-    # 엔터 입력도 동작하도록 (텍스트가 있으면 즉시 실행)
     if style_search and not do_search:
         do_search = True
 
@@ -362,7 +376,7 @@ with st.container(border=True):
                     st.markdown(f"**{label} - {skey} 일별 추이**")
                     if not daily_df.empty:
                         st.line_chart(daily_df.set_index("order date")[["sales","qty"]])
-                    st.dataframe(table.sort_values("order date", ascending=False), use_container_width=True)
+                    st.dataframe(table.sort_values("order date", descending=True), use_container_width=True)
 
 # =========================
 # 3) Aggregations
@@ -542,7 +556,7 @@ with st.container(border=True):
         s_all_cur = s_cur.dropna(subset=["style_key"]).copy()
         s_all_cur["is_refund"] = shein_refund_mask(s_all_cur["order status"])
         refund_stats = s_all_cur.groupby("style_key")["is_refund"].mean().sort_values(ascending=False)
-        high_refund = refund_stats[refund_stats >= 0.15].head(5)  # 환불률 15% 이상
+        high_refund = refund_stats[refund_stats >= 0.15].head(5)
         if not high_refund.empty:
             for sk, r in high_refund.items():
                 actions.append(f"SHEIN 환불률 높음({r*100:.0f}%): {sk} → PDP 설명/사이즈 안내 보강 & 리뷰 상단 고정")
@@ -554,7 +568,7 @@ with st.container(border=True):
         qty_purchased = t_all_cur.groupby("style_key")["quantity purchased"].sum().replace(0, pd.NA)
         cancel_cnt = t_all_cur.groupby("style_key")["is_cancel"].sum()
         cancel_rate = (cancel_cnt / qty_purchased).fillna(cancel_cnt / cancel_cnt.where(cancel_cnt==0, other=1)).sort_values(ascending=False)
-        high_cancel = cancel_rate[cancel_rate >= 0.10].head(5)  # 10%+
+        high_cancel = cancel_rate[cancel_rate >= 0.10].head(5)
         if not high_cancel.empty:
             for sk, r in high_cancel.items():
                 actions.append(f"TEMU 취소율 높음({r*100:.0f}%): {sk} → 상세/배송안내 보강 및 옵션/가격 점검")
@@ -635,7 +649,7 @@ with st.container(border=True):
 def build_daily(platform: str, s: pd.Timestamp, e: pd.Timestamp) -> pd.DataFrame:
     if platform == "TEMU":
         t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
-        t = t[temu_sold_mask(t["order item status"])]
+        t = t[temu_sold_mask(df_temu["order item status"])]
         daily = t.groupby(pd.Grouper(key="order date", freq="D")).agg(
             qty=("quantity shipped","sum"), Total_Sales=("base price total","sum")
         )
@@ -648,7 +662,7 @@ def build_daily(platform: str, s: pd.Timestamp, e: pd.Timestamp) -> pd.DataFrame
         )
     else:
         t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
-        t = t[temu_sold_mask(t["order item status"])].copy()
+        t = t[temu_sold_mask(df_temu["order item status"])].copy()
         s2 = df_shein[(df_shein["order date"]>=s)&(df_shein["order date"]<=e)]
         s2 = s2[~shein_refund_mask(s2["order status"])].copy()
         s2["qty"] = 1
@@ -682,8 +696,8 @@ def best_table(platform, df_sold, s, e):
         g = (
             df_sold.assign(style_key=lambda d: d["product number"].astype(str)
                            .apply(lambda x: style_key_from_label(x, IMG_MAP)))
-                  .dropna(subset=["style_key"])
-                  .groupby("style_key")["quantity shipped"].sum().astype(int).reset_index()
+               .dropna(subset=["style_key"])
+               .groupby("style_key")["quantity shipped"].sum().astype(int).reset_index()
         )
         g = g.rename(columns={"style_key":"Style Number","quantity shipped":"Sold Qty"})
         g["Image"] = g["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))

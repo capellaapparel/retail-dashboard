@@ -139,12 +139,11 @@ def _normalize_style_input(s: str | None) -> str | None:
     if not s: return None
     return str(s).upper().replace(" ", "")
 
-# Style-key helpers (TEMU는 PN에서, SHEIN은 Seller SKU 우선)
+# Style-key helpers
 def _style_key_series_temu(df: pd.DataFrame) -> pd.Series:
     return df["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
 
 def _style_key_series_shein_fallback(df: pd.DataFrame) -> pd.Series:
-    # fallback: description에서 추정
     return df["product description"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
 
 def _short_title_mask(series: pd.Series, thresh:int=25) -> pd.Series:
@@ -179,12 +178,11 @@ if "seller sku" in df_shein.columns:
     df_shein["color"] = parts[1].str.strip() if parts.shape[1] > 1 else ""
     df_shein["size"]  = parts[2].str.strip() if parts.shape[1] > 2 else ""
 else:
-    # 컬럼이 없으면 fallback
     df_shein["style_key"] = _style_key_series_shein_fallback(df_shein)
     df_shein["color"] = ""
     df_shein["size"]  = ""
 
-# TEMU 쪽도 color/size가 있으면 사용, 없으면 빈 값
+# TEMU color/size 보정
 if "color" not in df_temu.columns:
     df_temu["color"] = ""
 if "size" not in df_temu.columns:
@@ -212,7 +210,7 @@ if "sales_date_input" not in st.session_state:
 
 c1, c2 = st.columns([1.2, 8.8])
 with c1:
-    # ✅ 기본값을 SHEIN으로 (첫번째 옵션이 기본)
+    # ✅ 기본값: SHEIN
     platform = st.radio("플랫폼 선택", ["SHEIN", "TEMU", "BOTH"], horizontal=True)
 
 def _apply_quick_range():
@@ -307,7 +305,7 @@ else:
     p_sold = pd.concat([d1p, d2p], ignore_index=True)
 
 # =========================
-# ⭐ Style Search (스타일번호 검색) + 색상/사이즈 상세
+# ⭐ Style Search (스타일번호 검색) + 색상/사이즈/페어 상세
 # =========================
 def _donut_chart(labels, values, title: str):
     if len(values) == 0 or pd.Series(values).fillna(0).sum() == 0:
@@ -373,11 +371,10 @@ with st.container(border=True):
                     )
                     res_tables.append(("TEMU", t_daily, t_table))
 
-            # SHEIN (Seller SKU 기반 style_key/color/size 사용)
+            # SHEIN (Seller SKU 파싱 사용)
             if platform in ("SHEIN", "BOTH"):
                 s = df_shein[(df_shein["order date"]>=start)&(df_shein["order date"]<=end)].copy()
                 s = s[~shein_refund_mask(s["order status"])].copy()
-                # 이미 df_shein에 style_key/color/size가 생성되어 있음
                 s = s[s["style_key"] == skey]
                 shein_df_filtered = s.copy()
                 if not s.empty:
@@ -446,21 +443,20 @@ with st.container(border=True):
                     use_container_width=True
                 )
 
-                # ---- 정렬 (에러 fix: ascending=False만 사용)
+                # 원시 테이블 & 일별 라인
                 for label, daily_df, table in res_tables:
                     st.markdown(f"**{label} - {skey} 일별 추이**")
                     if not daily_df.empty:
                         st.line_chart(daily_df.set_index("order date")[["sales","qty"]])
                     st.dataframe(table.sort_values("order date", ascending=False), use_container_width=True)
 
-                # ---- 색상/사이즈별 세부 판매 (표 + 도넛)
+                # ---- 색상/사이즈별 (표 + 도넛)
                 st.divider()
                 st.markdown("### 스타일 세부 판매 (색상 · 사이즈)")
 
                 def _agg_variant_temudf(df: pd.DataFrame):
                     if df.empty: 
                         return pd.DataFrame(), pd.DataFrame()
-                    # TEMU: 수량 = quantity shipped 합
                     cdf = df.groupby("color")["quantity shipped"].sum().reset_index().rename(columns={"quantity shipped":"Qty"})
                     sdf = df.groupby("size")["quantity shipped"].sum().reset_index().rename(columns={"quantity shipped":"Qty"})
                     cdf = cdf.sort_values("Qty", ascending=False)
@@ -470,7 +466,6 @@ with st.container(border=True):
                 def _agg_variant_sheindf(df: pd.DataFrame):
                     if df.empty:
                         return pd.DataFrame(), pd.DataFrame()
-                    # SHEIN: 건수 기준
                     cdf = df.groupby("color").size().reset_index(name="Qty").sort_values("Qty", ascending=False)
                     sdf = df.groupby("size").size().reset_index(name="Qty").sort_values("Qty", ascending=False)
                     return cdf, sdf
@@ -509,40 +504,63 @@ with st.container(border=True):
                         else:
                             st.caption("사이즈 정보 없음")
 
-                if platform == "BOTH" and (not temu_df_filtered.empty or not shein_df_filtered.empty):
-                    st.markdown("**통합 변형 판매 (선택된 플랫폼 전체)**")
+                # ---- (추가) 색상-사이즈 묶음 집계 & 도넛
+                st.divider()
+                st.markdown("### 스타일 세부 판매 (색상-사이즈 묶음)")
+
+                def _pair_label(c, s):
+                    c = ("" if pd.isna(c) else str(c).strip())
+                    s = ("" if pd.isna(s) else str(s).strip())
+                    if c and s: return f"{c} / {s}"
+                    if c: return c
+                    if s: return s
+                    return "(미지정)"
+
+                # SHEIN: 건수
+                if not shein_df_filtered.empty:
+                    st.markdown("**SHEIN · Color-Size Mix**")
+                    pairs = (shein_df_filtered
+                             .assign(pair=lambda d: d.apply(lambda r: _pair_label(r.get("color",""), r.get("size","")), axis=1))
+                             .groupby("pair").size().reset_index(name="Qty")
+                             .sort_values("Qty", ascending=False))
+                    st.dataframe(pairs, use_container_width=True)
+                    _donut_chart(pairs.head(12)["pair"], pairs.head(12)["Qty"], "SHEIN · Color-Size Mix")
+
+                # TEMU: shipped 합
+                if not temu_df_filtered.empty:
+                    st.markdown("**TEMU · Color-Size Mix**")
+                    if "quantity shipped" not in temu_df_filtered.columns:
+                        temu_df_filtered = temu_df_filtered.assign(**{"quantity shipped": 0})
+                    pairs = (temu_df_filtered
+                             .assign(pair=lambda d: d.apply(lambda r: _pair_label(r.get("color",""), r.get("size","")), axis=1))
+                             .groupby("pair")["quantity shipped"].sum().reset_index()
+                             .rename(columns={"quantity shipped":"Qty"})
+                             .sort_values("Qty", ascending=False))
+                    st.dataframe(pairs, use_container_width=True)
+                    _donut_chart(pairs.head(12)["pair"], pairs.head(12)["Qty"], "TEMU · Color-Size Mix")
+
+                # BOTH 통합
+                if platform == "BOTH" and (not shein_df_filtered.empty or not temu_df_filtered.empty):
+                    st.markdown("**ALL · Color-Size Mix (선택된 플랫폼 전체)**")
                     merged = []
-                    if not temo_df_filtered.empty if 'temo_df_filtered' in locals() else False:
-                        pass  # (타이포 방지용, 아래 실제 merged는 temu_df_filtered 사용)
                     if not temu_df_filtered.empty:
-                        tmp = temu_df_filtered.copy()
-                        tmp["__platform__"] = "TEMU"
-                        merged.append(tmp)
+                        ttmp = temu_df_filtered.copy()
+                        ttmp["__platform__"] = "TEMU"
+                        merged.append(ttmp)
                     if not shein_df_filtered.empty:
-                        tmp = shein_df_filtered.copy()
-                        tmp["__platform__"] = "SHEIN"
-                        merged.append(tmp)
+                        stmp = shein_df_filtered.copy()
+                        stmp["__platform__"] = "SHEIN"
+                        merged.append(stmp)
                     M = pd.concat(merged, ignore_index=True)
-                    # 통합은 수량 기준 통일: TEMU 규칙(수량 합), SHEIN은 1로 환산
-                    M = M.copy()
                     if "quantity shipped" not in M.columns:
                         M["quantity shipped"] = 0
                     M.loc[M["__platform__"] == "SHEIN", "quantity shipped"] = 1
-                    cdf_all = M.groupby("color")["quantity shipped"].sum().reset_index().rename(columns={"quantity shipped":"Qty"}).sort_values("Qty", ascending=False)
-                    sdf_all = M.groupby("size")["quantity shipped"].sum().reset_index().rename(columns={"quantity shipped":"Qty"}).sort_values("Qty", ascending=False)
-                    cols = st.columns(2)
-                    with cols[0]:
-                        if not cdf_all.empty:
-                            st.dataframe(cdf_all, use_container_width=True)
-                            _donut_chart(cdf_all["color"], cdf_all["Qty"], "ALL · Color Mix")
-                        else:
-                            st.caption("색상 정보 없음")
-                    with cols[1]:
-                        if not sdf_all.empty:
-                            st.dataframe(sdf_all, use_container_width=True)
-                            _donut_chart(sdf_all["size"], sdf_all["Qty"], "ALL · Size Mix")
-                        else:
-                            st.caption("사이즈 정보 없음")
+                    pairs_all = (M.assign(pair=lambda d: d.apply(lambda r: _pair_label(r.get("color",""), r.get("size","")), axis=1))
+                                   .groupby("pair")["quantity shipped"].sum().reset_index()
+                                   .rename(columns={"quantity shipped":"Qty"})
+                                   .sort_values("Qty", ascending=False))
+                    st.dataframe(pairs_all, use_container_width=True)
+                    _donut_chart(pairs_all.head(12)["pair"], pairs_all.head(12)["Qty"], "ALL · Color-Size Mix")
 
 # =========================
 # 5) KPI
@@ -654,12 +672,10 @@ with st.container(border=True):
     t_cur_sold = t_cur[temu_sold_mask(t_cur["order item status"])].dropna(subset=["style_key"])
     t_cur_qty = t_cur_sold.groupby("style_key")["quantity shipped"].sum().astype(int)
 
-    # SHEIN은 Seller SKU 파싱된 style_key 사용
     s_cur = df_shein[(df_shein["order date"]>=start)&(df_shein["order date"]<=end)].copy()
     s_cur_sold = s_cur[~shein_refund_mask(s_cur["order status"])].dropna(subset=["style_key"])
     s_cur_qty = s_cur_sold.groupby("style_key").size().astype(int)
 
-    # ---- 전기간
     t_prev = df_temu[(df_temu["order date"]>=prev_start)&(df_temu["order date"]<=prev_end)].copy()
     t_prev["style_key"] = _style_key_series_temu(t_prev)
     t_prev_sold = t_prev[temu_sold_mask(t_prev["order item status"])].dropna(subset=["style_key"])

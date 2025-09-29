@@ -226,6 +226,8 @@ def _apply_quick_range():
         first_this = today_ts.replace(day=1)
         last_end   = first_this - pd.Timedelta(days=1)
         s = last_end.replace(day=1); e = last_end
+    elif label == "전체 기간":   # 👈 추가
+        s = pd.to_datetime(min_dt); e = pd.to_datetime(max_dt)
     else:
         return
     s = _clamp_date(s); e = _clamp_date(e)
@@ -241,11 +243,17 @@ with c2:
         max_value=max_dt,
     )
     try:
-        st.segmented_control("", ["최근 1주", "최근 1개월", "이번 달", "지난 달"],
-                             key="quick_range", on_change=_apply_quick_range)
+    st.segmented_control(
+        "",
+        ["최근 1주", "최근 1개월", "이번 달", "지난 달", "전체 기간"],  # 👈 전체 기간 추가
+        key="quick_range", on_change=_apply_quick_range
+    )
     except Exception:
-        st.pills("", ["최근 1주", "최근 1개월", "이번 달", "지난 달"],
-                 selection_mode="single", key="quick_range", on_change=_apply_quick_range)
+    st.pills(
+        "",
+        ["최근 1주", "최근 1개월", "이번 달", "지난 달", "전체 기간"],  # 👈 동일하게 추가
+        selection_mode="single", key="quick_range", on_change=_apply_quick_range
+    )
 
 s_date, e_date = st.session_state["sales_date_input"]
 s_date = pd.to_datetime(s_date).date()

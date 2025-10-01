@@ -117,7 +117,7 @@ def style_key_from_label(label: str, img_map: dict) -> str | None:
 def img_tag(url):
     return f"<img src='{url}' class='thumb'>" if str(url).startswith("http") else ""
 
-# ---- Status / promo helpers (모두 이 파일 안에 정의)
+# ---- Status / promo helpers
 def temu_sold_mask(s: pd.Series) -> pd.Series:
     return s.astype(str).str.lower().str.contains("shipped|delivered", regex=True, na=False)
 
@@ -223,6 +223,13 @@ def _apply_quick_range():
         first_this = today_ts.replace(day=1)
         last_end   = first_this - pd.Timedelta(days=1)
         s = last_end.replace(day=1); e = last_end
+    elif label == "이번 연도":
+        s = today_ts.replace(month=1, day=1); e = today_ts
+    elif label == "전년도":
+        jan1_this = today_ts.replace(month=1, day=1)
+        dec31_this = today_ts.replace(month=12, day=31)
+        s = jan1_this - pd.DateOffset(years=1)
+        e = dec31_this - pd.DateOffset(years=1)
     elif label == "전체 기간":
         s = pd.to_datetime(min_dt); e = pd.to_datetime(max_dt)
     else:
@@ -243,14 +250,14 @@ with c2:
     try:
         st.segmented_control(
             "",
-            ["최근 1주", "최근 1개월", "이번 달", "지난 달", "전체 기간"],
+            ["최근 1주", "최근 1개월", "이번 달", "지난 달", "이번 연도", "전년도", "전체 기간"],
             key="quick_range",
             on_change=_apply_quick_range
         )
     except Exception:
         st.pills(
             "",
-            ["최근 1주", "최근 1개월", "이번 달", "지난 달", "전체 기간"],
+            ["최근 1주", "최근 1개월", "이번 달", "지난 달", "이번 연도", "전년도", "전체 기간"],
             selection_mode="single",
             key="quick_range",
             on_change=_apply_quick_range

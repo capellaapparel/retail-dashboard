@@ -42,20 +42,74 @@ img.thumb { width:84px; height:auto; border-radius:12px; }
 # =========================
 # Helpers
 # =========================
-@st.cache_data(show_spinner=False)
-def load_google_sheet(sheet_name: str) -> pd.DataFrame:
+@st.cache_data(ttl=300, show_spinner=False)
+def load_google_sheet(worksheet_title: str) -> pd.DataFrame:
     import gspread
-    from oauth2client.service_account import ServiceAccountCredentials
-    import json
-    GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
-    scope = ["https://spreadsheets.google.com/feeds","https://www.googleapis.com/auth/drive"]
-    creds_json = {k: str(v) for k, v in st.secrets["gcp_service_account"].items()}
-    with open("/tmp/service_account.json","w") as f: json.dump(creds_json, f)
-    creds = ServiceAccountCredentials.from_json_keyfile_name("/tmp/service_account.json", scope)
-    client = gspread.authorize(creds)
-    ws = client.open_by_url(GOOGLE_SHEET_URL).worksheet(sheet_name)
-    df = pd.DataFrame(ws.get_all_records())
+    from gspread.exceptions import WorksheetNotFound, APIError, GSpreadException
+
+    # ---- 1) Auth (expects full SA JSON in st.secrets["gcp_service_account"])
+    gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+
+    # ---- 2) Open spreadsheet (prefer KEY in secrets; else fallback to your URL)
+    SHEET_KEY = st.secrets.get("SHEETS", {}).get("CAPELLA_BOOK_ID")
+    if SHEET_KEY:
+        sh = gc.open_by_key(SHEET_KEY)
+    else:
+        GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1oyVzCgGK1Q3Qi_sbYwE-wKG6SArnfUDRe7rQfGOF-Eo"
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+
+    # ---- 3) Pick worksheet by title
+    try:
+        ws = sh.worksheet(worksheet_title)
+    except WorksheetNotFound:
+        tabs = [w.title for w in sh.worksheets()]
+        st.error(f"시트 '{worksheet_title}' 를 찾을 수 없습니다. 사용 가능한 탭: {tabs}")
+        raise
+
+    # ---- 4) Robust read (avoid get_all_records)
+    try:
+        values = ws.get_all_values()
+    except (APIError, GSpreadException) as e:
+        st.error("시트 값을 불러오는 중 오류가 발생했습니다. 머지된 셀/필터뷰/헤더 공백을 확인하세요.")
+        raise
+
+    if not values:
+        return pd.DataFrame()
+
+    # ---- 5) Find first non-empty row as header
+    header_idx = None
+    for i, row in enumerate(values):
+        if any(str(c).strip() for c in row):
+            header_idx = i
+            break
+    if header_idx is None:
+        return pd.DataFrame()
+
+    header = values[header_idx]
+    rows = values[header_idx + 1:]
+
+    # ---- 6) Clean & make headers unique, then lowercase/strip (to match your code)
+    seen = {}
+    clean_header = []
+    for i, h in enumerate(header):
+        col = str(h or "").strip()
+        if col == "":
+            col = f"col_{i+1}"
+        if col in seen:
+            seen[col] += 1
+            col = f"{col}_{seen[col]}"
+        else:
+            seen[col] = 1
+        clean_header.append(col)
+
+    df = pd.DataFrame(rows, columns=clean_header)
+
+    # Normalize strings / empties
+    df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x).replace("", pd.NA)
+
+    # Keep your original convention (lowercase/strip)
     df.columns = [c.lower().strip() for c in df.columns]
+
     return df
 
 def parse_temudate(x):

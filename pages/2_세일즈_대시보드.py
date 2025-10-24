@@ -661,11 +661,11 @@ def _pc(cur, prev):
 
 def get_bestseller_labels(platform, df_sold, s, e):
     if platform == "TEMU":
-        best = df_sold.groupby("product number")["quantity shipped"].sum().sort_values(ascending=False).head(10)
+        best = df_sold.groupby("product number")["quantity shipped"].sum().sort_values(ascending=False).head(50)
         return list(best.index.astype(str))
     elif platform == "SHEIN":
         tmp = df_sold.copy(); tmp["qty"] = 1
-        best = tmp.groupby("product description")["qty"].sum().sort_values(ascending=False).head(10)
+        best = tmp.groupby("product description")["qty"].sum().sort_values(ascending=False).head(50)
         return list(best.index.astype(str))
     else:
         t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
@@ -680,7 +680,7 @@ def get_bestseller_labels(platform, df_sold, s, e):
         s_cnt = s2.groupby("style_key").size()
         mix = (pd.DataFrame({"t":t_cnt, "s":s_cnt}).fillna(0))
         mix["tot"] = mix["t"] + mix["s"]
-        return list(mix["tot"].sort_values(ascending=False).head(10).index.astype(str))
+        return list(mix["tot"].sort_values(ascending=False).head(50).index.astype(str))
 
 cur_top = get_bestseller_labels(platform, df_sold, start, end)
 prev_top = get_bestseller_labels(platform, locals().get("p_sold", pd.DataFrame()), prev_start, prev_end) if 'p_sold' in locals() else []
@@ -873,7 +873,7 @@ else:
 # =========================
 # 9) Best Seller 10
 # =========================
-st.subheader("Best Seller 10")
+st.subheader("Best Seller 50")
 
 def best_table(platform, df_sold, s, e):
     if platform == "TEMU":
@@ -885,7 +885,7 @@ def best_table(platform, df_sold, s, e):
         )
         g = g.rename(columns={"style_key":"Style Number","quantity shipped":"Sold Qty"})
         g["Image"] = g["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
-        return g[["Image","Style Number","Sold Qty"]].sort_values("Sold Qty", ascending=False).head(10)
+        return g[["Image","Style Number","Sold Qty"]].sort_values("Sold Qty", ascending=False).head(50)
 
     if platform == "SHEIN":
         tmp = df_sold.copy(); tmp["qty"] = 1
@@ -897,7 +897,7 @@ def best_table(platform, df_sold, s, e):
         )
         g = g.rename(columns={"style_key":"Style Number","qty":"Sold Qty"})
         g["Image"] = g["Style Number"].apply(lambda x: img_tag(IMG_MAP.get(x, "")))
-        return g[["Image","Style Number","Sold Qty"]].sort_values("Sold Qty", ascending=False).head(10)
+        return g[["Image","Style Number","Sold Qty"]].sort_values("Sold Qty", ascending=False).head(50)
 
     # BOTH
     t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)&
@@ -914,7 +914,7 @@ def best_table(platform, df_sold, s, e):
 
     mix = pd.DataFrame({"TEMU Qty": t_group, "SHEIN Qty": s_group}).fillna(0).astype(int)
     mix["Sold Qty"] = (mix["TEMU Qty"] + mix["SHEIN Qty"]).astype(int)
-    mix = mix.sort_values("Sold Qty", ascending=False).head(10).reset_index()
+    mix = mix.sort_values("Sold Qty", ascending=False).head(50).reset_index()
     if "index" in mix.columns:
         mix = mix.rename(columns={"index":"Style Number"})
     elif "style_key" in mix.columns:

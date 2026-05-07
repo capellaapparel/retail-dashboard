@@ -105,7 +105,7 @@ def load_google_sheet(worksheet_title: str) -> pd.DataFrame:
     df = pd.DataFrame(rows, columns=clean_header)
 
     # Normalize strings / empties
-    df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x).replace("", pd.NA)
+    df = df.map(lambda x: x.strip() if isinstance(x, str) else x).replace("", pd.NA)
 
     # Keep your original convention (lowercase/strip)
     df.columns = [c.lower().strip() for c in df.columns]

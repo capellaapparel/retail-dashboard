@@ -151,21 +151,21 @@ def build_img_map(df_info: pd.DataFrame):
     keys = df_info["product number"].astype(str).str.upper().str.replace(" ", "", regex=False)
     return dict(zip(keys, df_info.get("image", pd.Series(index=df_info.index)).fillna("")))
 
-def style_key_from_label(label: str, img_map: dict) -> str | None:
-    s = str(label).strip().upper()
-    if not s:
-        return None
-    s_key = s.replace(" ", "")
-    if s_key in img_map:
-        return s_key
-    m = STYLE_RE.search(s)
-    if m:
-        cand = m.group(1).replace(" ", "")
-        if cand in img_map:
-            return cand
+def style_key_from_label(label, img_map):
+    s_key = str(label).upper().strip()
+
     for k in img_map.keys():
-        if k in s_key:
-            return k
+        if pd.isna(k):
+            continue
+
+        k_str = str(k).upper().strip()
+
+        if not k_str:
+            continue
+
+        if k_str in s_key:
+            return k_str
+
     return None
 
 def img_tag(url):
@@ -670,7 +670,9 @@ def get_bestseller_labels(platform, df_sold, s, e):
     else:
         t = df_temu[(df_temu["order date"]>=s)&(df_temu["order date"]<=e)]
         t = t[temu_sold_mask(t["order item status"])].copy()
-        t["style_key"] = t["product number"].astype(str).apply(lambda x: style_key_from_label(x, IMG_MAP))
+        t["style_key"] = t["product number"].astype("string").apply(
+    lambda x: style_key_from_label(x, IMG_MAP)
+)
         t = t.dropna(subset=["style_key"])
         t_cnt = t.groupby("style_key")["quantity shipped"].sum()
         s2 = df_shein[(df_shein["order date"]>=s)&(df_shein["order date"]<=e)]
